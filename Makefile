@@ -19,16 +19,18 @@ ulid_generator: src/ulid.go
 # Install the binary
 install: ulid_generator
 	# Create directory and install the Go binary
-	mkdir -p $(DESTDIR)/usr/local/bin
-	install -m 755 ulid_generator $(DESTDIR)/usr/local/bin/ulid_generator
-	# Install extension files manually to the correct location
-	mkdir -p $(DESTDIR)/usr/share/postgresql/17/extension
-	install -m 644 ulid.control $(DESTDIR)/usr/share/postgresql/17/extension/
-	install -m 644 sql/ulid--1.0.0.sql $(DESTDIR)/usr/share/postgresql/17/extension/
+	mkdir -p $(DESTDIR)$(bindir)
+	install -m 755 ulid_generator $(DESTDIR)$(bindir)/ulid_generator
+	# Install extension files using PostgreSQL's standard installation
+	$(MAKE) -C . install-data
 
 # Run tests
 test:
 	cd test && go test -v
+
+# PostgreSQL regression tests
+installcheck:
+	cd test && go test -v -run TestSQL
 
 # Run comprehensive test suite
 test-all: test

@@ -19,16 +19,18 @@ ulid_generator.exe: src/ulid.go
 # Install the binary
 install: ulid_generator.exe
 	# Create directory and install the Go binary
-	@if not exist "$(DESTDIR)\usr\local\bin" mkdir "$(DESTDIR)\usr\local\bin"
-	copy ulid_generator.exe "$(DESTDIR)\usr\local\bin\ulid_generator.exe"
-	# Install extension files manually
-	@if not exist "$(DESTDIR)\usr\local\share\postgresql\extension" mkdir "$(DESTDIR)\usr\local\share\postgresql\extension"
-	copy ulid.control "$(DESTDIR)\usr\local\share\postgresql\extension\"
-	copy sql\ulid--1.0.0.sql "$(DESTDIR)\usr\local\share\postgresql\extension\"
+	mkdir "$(DESTDIR)$(bindir)" 2>nul || true
+	copy ulid_generator.exe "$(DESTDIR)$(bindir)\ulid_generator.exe"
+	# Install extension files using PostgreSQL's standard installation
+	$(MAKE) -C . install-data
 
 # Run tests
 test:
 	cd test && go test -v
+
+# PostgreSQL regression tests
+installcheck:
+	cd test && go test -v -run TestSQL
 
 # Clean build artifacts
 clean:
