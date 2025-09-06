@@ -1,67 +1,72 @@
-# Makefile.win for ulid extension (Go implementation)
+# Makefile.win for ulid extension (nmake-friendly)
 EXTENSION = ulid
 VERSION = 1.0.0
 DATA = sql/$(EXTENSION)--$(VERSION).sql
 
-# PostgreSQL extension build system
-PG_CONFIG ?= pg_config
-PGXS := $(shell $(PG_CONFIG) --pgxs)
-include $(PGXS)
-
-# Override the default build target
+# Default target
 all: ulid_generator.exe
 
 # Build the Go binary
-ulid_generator.exe: src/ulid.go
+# Uses cmd /c to run in one line and ensure proper error propagation
+ulid_generator.exe:
 	@echo Building Go binary...
-	cd src && go mod download
-	cd src && go build -o ../ulid_generator.exe .
+	cd src && go mod download && cd .. && cd src && go build -o ..\ulid_generator.exe .
 
-# Custom install target for the Go binary (respects DESTDIR & bindir)
+# install-binary: copy the exe into PostgreSQL bindir (respects DESTDIR if set)
 install-binary: ulid_generator.exe
-	@echo Installing ulid_generator.exe to $(DESTDIR)$(bindir)
-	# Create bindir if needed, then copy exe
-	powershell -Command "New-Item -ItemType Directory -Force -Path '$(DESTDIR)$(bindir)' > \$null; Copy-Item -Force ulid_generator.exe -Destination '$(DESTDIR)$(bindir)\ulid_generator.exe'"
+	@echo Installing ulid_generator.exe to destination bindir...
+	@powershell -NoProfile -Command ^
+	  "$bind = (& pg_config --bindir).Trim(); ^ 
+	   $dest = '$(DESTDIR)'; ^
+	   if(-not $dest) { $dest = '' } ; ^
+	   $target = Join-Path $dest $bind; ^
+	   New-Item -ItemType Directory -Force -Path $target | Out-Null; ^
+	   Copy-Item -Force ulid_generator.exe -Destination (Join-Path $target 'ulid_generator.exe'); ^
+	   Write-Host 'Installed:' (Join-Path $target 'ulid_generator.exe')"
 
-# Install SQL into datadir/extension (do not change source sql)
+# install: put the substituted SQL into Postgres shared extension dir (no PGXS install call)
 install: install-binary
-	@echo Installing SQL to $(DESTDIR)$(datadir)\extension
-	powershell -Command "New-Item -ItemType Directory -Force -Path '$(DESTDIR)$(datadir)\extension' > \$null; (Get-Content '$(DATA)') -replace '@BINDIR@','$(bindir)' | Set-Content -Encoding UTF8 '$(DESTDIR)$(datadir)\extension\$(EXTENSION)--$(VERSION).sql'"
-	# invoke PGXS install step to install control file, etc.
-	$(MAKE) -s -f $(top_srcdir)/Makefile install
+	@echo Installing SQL to Postgres shared extension directory...
+	@powershell -NoProfile -Command ^
+	  "$share = (& pg_config --sharedir).Trim(); ^
+	   $bind = (& pg_config --bindir).Trim(); ^
+	   $dest = '$(DESTDIR)'; ^
+	   if(-not $dest) { $dest = '' } ; ^
+	   $instDir = Join-Path $dest $share; ^
+	   $extDir = Join-Path $instDir 'extension'; ^
+	   New-Item -ItemType Directory -Force -Path $extDir | Out-Null; ^
+	   $src = Resolve-Path '$(DATA)'; ^
+	   if(-not (Test-Path $src)) { Write-Host 'ERROR: SQL source $(DATA) not found'; exit 2 } ; ^
+	   (Get-Content $src) -replace '@BINDIR@', $bind | Set-Content -Encoding UTF8 (Join-Path $extDir '$(EXTENSION)--$(VERSION).sql'); ^
+	   Write-Host 'Installed SQL to:' (Join-Path $extDir '$(EXTENSION)--$(VERSION).sql')"
 
-# Run tests (Go)
+# Run Go tests
 test:
-	cd test && go test -v ./...
+	@cd test && go test -v ./...
 
-# PostgreSQL regression tests (Windows)
+# Windows installcheck: call the Windows CI script if present
 installcheck:
-	@echo Running PostgreSQL extension tests...
-	@if exist test\build\ci.bat ( \
-		test\build\ci.bat ; \
-		if errorlevel 1 ( \
-			echo Extension tests failed or PostgreSQL not available. && exit /b 1 \
-		) else ( \
-			echo Extension tests passed! \
-		) \
-	) else ( \
-		echo test\build\ci.bat not found; exit /b 1 \
+	@echo Running PostgreSQL extension tests (Windows)...
+	@if exist test\build\ci.bat ( ^
+		test\build\ci.bat && (echo Extension tests passed!) || (echo Extension tests failed! & exit /b 1) ^
+	) else ( ^
+		echo test\build\ci.bat not found; exit /b 1 ^
 	)
 
-# Clean build artifacts
+# Clean
 clean:
-	if exist ulid_generator.exe del /Q ulid_generator.exe
-	cd src && go clean
-	cd test && go clean -testcache
+	@if exist ulid_generator.exe del /Q ulid_generator.exe
+	cd src && go clean || true
+	cd test && go clean -testcache || true
 
-# Help target
+# Help
 help:
 	@echo Available targets:
-	@echo   all      - Build the extension (default)
-	@echo   install  - Install the extension
-	@echo   test     - Run tests
-	@echo   installcheck - Run regression tests (requires PostgreSQL)
-	@echo   clean    - Clean build artifacts
-	@echo   help     - Show this help message
+	@echo   all              - Build the extension (default)
+	@echo   install-binary  - Install the extension binary into Postgres bindir
+	@echo   install          - Install SQL into Postgres shared extension dir (uses pg_config)
+	@echo   test             - Run Go tests
+	@echo   installcheck     - Run Windows regression tests (requires test\build\ci.bat)
+	@echo   clean            - Clean build artifacts
 
-.PHONY: all install install-binary test installcheck clean help
+.PHONY: all install-binary install test installcheck clean help
