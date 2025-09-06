@@ -9,7 +9,7 @@ DECLARE
     result TEXT;
 BEGIN
     CREATE TEMP TABLE IF NOT EXISTS ulid_temp (id text);
-    COPY ulid_temp FROM PROGRAM '/usr/local/bin/ulid_generator monotonic';
+    COPY ulid_temp FROM PROGRAM '@BINDIR@/ulid_generator monotonic';
     SELECT id INTO result FROM ulid_temp LIMIT 1;
     DROP TABLE IF EXISTS ulid_temp;
     RETURN result;
@@ -25,7 +25,7 @@ DECLARE
 BEGIN
     -- Use COPY FROM PROGRAM to execute the Go binary
     CREATE TEMP TABLE IF NOT EXISTS ulid_temp (id text);
-    COPY ulid_temp FROM PROGRAM '/usr/local/bin/ulid_generator generate';
+    COPY ulid_temp FROM PROGRAM '@BINDIR@/ulid_generator generate';
     SELECT id INTO result FROM ulid_temp LIMIT 1;
     DROP TABLE IF EXISTS ulid_temp;
     RETURN result;
@@ -40,7 +40,7 @@ DECLARE
     result TEXT;
 BEGIN
     CREATE TEMP TABLE IF NOT EXISTS ulid_temp (id text);
-    EXECUTE 'COPY ulid_temp FROM PROGRAM ''/usr/local/bin/ulid_generator time ' || timestamp_ms::TEXT || '''';
+    EXECUTE 'COPY ulid_temp FROM PROGRAM ''@BINDIR@/ulid_generator time ' || timestamp_ms::TEXT || '''';
     SELECT id INTO result FROM ulid_temp LIMIT 1;
     DROP TABLE IF EXISTS ulid_temp;
     RETURN result;
@@ -55,7 +55,7 @@ DECLARE
     result TEXT;
 BEGIN
     CREATE TEMP TABLE IF NOT EXISTS ulid_temp (id text);
-    COPY ulid_temp FROM PROGRAM '/usr/local/bin/ulid_generator generate';
+    COPY ulid_temp FROM PROGRAM '@BINDIR@/ulid_generator generate';
     SELECT id INTO result FROM ulid_temp LIMIT 1;
     DROP TABLE IF EXISTS ulid_temp;
     RETURN result;

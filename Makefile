@@ -18,12 +18,15 @@ ulid_generator: src/ulid.go
 
 # Custom install target for the Go binary
 install-binary: ulid_generator
-	# Create directory and install the Go binary
+	# Create directory and install the Go binary to bindir
 	mkdir -p $(DESTDIR)$(bindir)
 	install -m 755 ulid_generator $(DESTDIR)$(bindir)/ulid_generator
 
 # Override the default install to include our binary
 install: install-binary
+	# Replace @BINDIR@ placeholder in SQL file with actual bindir
+	sed "s|@BINDIR@|$(bindir)|g" sql/ulid--1.0.0.sql > sql/ulid--1.0.0.sql.tmp
+	mv sql/ulid--1.0.0.sql.tmp sql/ulid--1.0.0.sql
 
 # Run tests
 test:
