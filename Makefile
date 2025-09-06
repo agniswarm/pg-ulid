@@ -70,30 +70,14 @@ clean:
 # Usage:
 #   make prove_installcheck
 #   make prove_installcheck PROVE_FLAGS="-I ./postgres/src/test/perl -v"
+
+# for Postgres < 15
+PROVE_FLAGS += -I ./test/perl
+
 prove_installcheck:
-	@echo "Running prove_installcheck..."
-	@# locate prove
-	@command -v prove >/dev/null 2>&1 || (echo "Error: 'prove' not found. Install perl TAP tools (on Debian/Ubuntu: apt-get install perl)"; exit 2)
-	@# find test files: prefer repo test/perl, fallback to postgres test dir if present
-	@TEST_DIR=""
-	@if [ -d "./test/perl" ]; then \
-		TEST_DIR="./test/perl"; \
-	elif [ -d "./postgres/src/test/perl" ]; then \
-		TEST_DIR="./postgres/src/test/perl"; \
-	else \
-		echo "Error: no Perl test directory found (expected ./test/perl or ./postgres/src/test/perl)"; exit 3; \
-	fi; \
-	echo "Using TEST_DIR=$$TEST_DIR"; \
-	echo "PROVE_FLAGS='$(PROVE_FLAGS)'"; \
-	# run prove on all .t files in test dir (if none found, fail)
-	set -e; \
-	TFILES=$$(ls $$TEST_DIR/*.t 2>/dev/null || true); \
-	if [ -z "$$TFILES" ]; then \
-		echo "No .t files found in $$TEST_DIR; nothing to run."; exit 4; \
-	fi; \
-	# prepend -I paths if not already in PROVE_FLAGS
-	EXTRA_I_FLAGS="-I ./postgres/src/test/perl -I ./test/perl"; \
-	echo "Running: prove $$EXTRA_I_FLAGS $(PROVE_FLAGS) $$TFILES"; \
-	prove $$EXTRA_I_FLAGS $(PROVE_FLAGS) $$TFILES
+	rm -rf $(CURDIR)/tmp_check
+	cd $(srcdir) && TESTDIR='$(CURDIR)' PATH="$(bindir):$$PATH" PGPORT='6$(DEF_PGPORT)' PG_REGRESS='$(top_builddir)/src/test/regress/pg_regress' $(PROVE) $(PG_PROVE_FLAGS) $(PROVE_FLAGS) $(if $(PROVE_TESTS),$(PROVE_TESTS),test/t/*.pl)
+
+.PHONY: dist
 
 .PHONY: prove_installcheck
