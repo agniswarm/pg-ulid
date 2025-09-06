@@ -279,12 +279,27 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: '1.21'
-
-      - name: Build with no OPTFLAGS
-        run: make OPTFLAGS=""
-
-      - name: Install preserving PG_CONFIG
-        run: sudo --preserve-env=PG_CONFIG make install-local
-
-      - name: installcheck
-        run: make installcheck
+      - name: Build with no OPTFLAGS (static-go)
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          echo "CGO_ENABLED=$CGO_ENABLED"
+          make OPTFLAGS=""
+      - name: Install preserving PG_CONFIG (install-local)
+        run: |
+          export PG_CONFIG=$(which pg_config)
+          sudo --preserve-env=PG_CONFIG make install-local
+      - name: "Diagnostics: inspect installed binary & extension files"
+        run: |
+            set -e
+            BIND="$(pg_config --bindir)"
+            SHARE="$(pg_config --sharedir)"
+            echo "bind: $BIND"
+            echo "share: $SHARE"
+            ls -la "$BIND/ulid_generator" || true
+            file "$BIND/ulid_generator" || true
+            ldd "$BIND/ulid_generator" || true
+            ls -la "$SHARE/extension" || true
+      - name: Run installcheck
+        run: |
+          make installcheck

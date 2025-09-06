@@ -14,12 +14,15 @@ CONTROL_FILE := $(EXTENSION).control
 
 all: ulid_generator
 
-# Build the Go binary (respect CGO_ENABLED if provided; default to 0 for CI)
 ulid_generator: src/ulid.go
-	@echo "Building Go binary (CGO_ENABLED=$(or $(CGO_ENABLED),0))..."
+	@echo "Building Go binary (CGO_ENABLED='$(CGO_ENABLED)')..."
 	cd src && go mod download
-	# Use '.' as package path so the module build works consistently
-	CGO_ENABLED=$(or $(CGO_ENABLED),0) go build -o ../ulid_generator .
+	# If CGO_ENABLED is set in the environment, it will be honored; otherwise go uses its default.
+	@if [ -n "$(CGO_ENABLED)" ]; then \
+		CGO_ENABLED=$(CGO_ENABLED) go build -o ../ulid_generator . ; \
+	else \
+		go build -o ../ulid_generator . ; \
+	fi
 
 install-binary: ulid_generator
 	@echo "Installing ulid_generator to $(DESTDIR)$(bindir)"
