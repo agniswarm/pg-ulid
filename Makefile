@@ -1,36 +1,48 @@
 # Makefile for ulid extension (Go implementation)
 
 EXTENSION = ulid
-DATA = sql/ulid--1.0.0.sql
+VERSION = 1.0.0
+DATA = sql/$(EXTENSION)--$(VERSION).sql
 
 # PostgreSQL extension build system
-PG_CONFIG = pg_config
+PG_CONFIG ?= pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
+
+# Directory variables provided by PGXS:
+# - bindir : where Postgres binaries live
+# - datadir: top-level share directory
+# We will install the SQL into $(datadir)/extension to avoid mutating source.
 
 # Override the default build target
 all: ulid_generator
 
 # Build the Go binary
 ulid_generator: src/ulid.go
+	@echo "Building Go binary..."
 	cd src && go mod download
-	cd src && go build -o ../ulid_generator ulid.go
+	cd src && go build -o ../ulid_generator .
 
-# Custom install target for the Go binary
+# Custom install target for the Go binary (respects DESTDIR and bindir)
 install-binary: ulid_generator
-	# Create directory and install the Go binary to bindir
-	mkdir -p $(DESTDIR)$(bindir)
-	install -m 755 ulid_generator $(DESTDIR)$(bindir)/ulid_generator
+	@echo "Installing ulid_generator to $(DESTDIR)$(bindir)"
+	install -d -m 0755 $(DESTDIR)$(bindir)
+	install -m 0755 ulid_generator $(DESTDIR)$(bindir)/ulid_generator
 
-# Override the default install to include our binary
+# Install extension files AND the binary.
+# Do not mutate the source SQL file; write the generated SQL into the installed datadir.
 install: install-binary
-	# Replace @BINDIR@ placeholder in SQL file with actual bindir
-	sed "s|@BINDIR@|$(bindir)|g" sql/ulid--1.0.0.sql > sql/ulid--1.0.0.sql.tmp
-	mv sql/ulid--1.0.0.sql.tmp sql/ulid--1.0.0.sql
+	@echo "Installing SQL to $(DESTDIR)$(datadir)/extension"
+	install -d -m 0755 $(DESTDIR)$(datadir)/extension
+	# Replace @BINDIR@ placeholder in SQL and install into datadir/extension
+	sed "s|@BINDIR@|$(bindir)|g" sql/$(EXTENSION)--$(VERSION).sql \
+		> $(DESTDIR)$(datadir)/extension/$(EXTENSION)--$(VERSION).sql
+	# Now run the PGXS-provided install target to install control file, etc.
+	$(MAKE) -s -f $(top_srcdir)/Makefile install
 
-# Run tests
+# Run Go unit tests
 test:
-	cd test && go test -v
+	cd test && go test -v ./...
 
 # PostgreSQL regression tests (requires PostgreSQL to be running)
 installcheck:
@@ -43,34 +55,10 @@ installcheck:
 		exit 1; \
 	fi
 
-
-# Run comprehensive test suite
-test-all: test
-	./test/run_tests_go.sh
-
-# Run tests with verbose output
-test-verbose: test
-	./test/run_tests_go.sh -v
-
-# Run tests without database integration
-test-no-db: test
-	./test/run_tests_go.sh --skip-db
-
 # Clean build artifacts
 clean:
 	rm -f ulid_generator
+	cd src && go clean
 	cd test && go clean -testcache
 
-# Help target
-help:
-	@echo Available targets:
-	@echo   all         - Build the extension (default)
-	@echo   install     - Install the extension
-	@echo   test        - Run Go unit tests
-	@echo   test-all    - Run comprehensive test suite
-	@echo   test-verbose- Run tests with verbose output
-	@echo   test-no-db  - Run tests without database integration
-	@echo   clean       - Clean build artifacts
-	@echo   help        - Show this help message
-
-.PHONY: all install test test-all test-verbose test-no-db clean help
+.PHONY: all install install-binary test installcheck clean

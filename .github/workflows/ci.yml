@@ -1,7 +1,9 @@
 name: build
 on: [push, pull_request]
+
 jobs:
   ubuntu:
+    name: ubuntu (postgres ${{ matrix.postgres }})
     runs-on: ${{ matrix.os }}
     if: ${{ !startsWith(github.ref_name, 'mac') && !startsWith(github.ref_name, 'windows') }}
     strategy:
@@ -24,30 +26,42 @@ jobs:
             os: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - uses: ankane/setup-postgres@v1
+
+      - name: Setup Postgres
+        uses: ankane/setup-postgres@v1
         with:
           postgres-version: ${{ matrix.postgres }}
           dev-files: true
-      - uses: actions/setup-go@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
         with:
           go-version: '1.21'
-      - run: make
-        env:
-          PG_CFLAGS: ${{ matrix.postgres >= 18 && '-Wno-missing-field-initializers' || '' }} -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare
-      - run: |
-          export PG_CONFIG=`which pg_config`
+
+      - name: Build
+        run: |
+          # set PG_CFLAGS with the extra flag for PG >= 18
+          export PG_CFLAGS="${{ matrix.postgres >= 18 && '-Wno-missing-field-initializers' || '' }} -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare"
+          make
+
+      - name: Install (preserve PG_CONFIG)
+        run: |
+          export PG_CONFIG=$(which pg_config)
           sudo --preserve-env=PG_CONFIG make install
-      - run: |
-          # Ensure PostgreSQL is running and ready
-          sudo service postgresql start
-          # Wait for PostgreSQL to be ready
+
+      - name: Ensure Postgres running
+        run: |
+          sudo service postgresql start || true
           until pg_isready; do
-            echo "Waiting for PostgreSQL to start..."
+            echo "Waiting for PostgreSQL..."
             sleep 1
           done
-          echo "PostgreSQL is ready!"
-      - run: make installcheck
-      - if: ${{ failure() }}
+
+      - name: installcheck
+        run: make installcheck
+
+      - name: Show regression.diffs on failure
+        if: ${{ failure() }}
         run: |
           echo "Checking for regression.diffs:"
           if [ -f regression.diffs ]; then
@@ -55,7 +69,17 @@ jobs:
           else
             echo "No regression.diffs found"
           fi
+
+      - name: Extra deps for prove_installcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libipc-run-perl
+
+      - name: perl install-check tests
+        run: make prove_installcheck
+
   mac:
+    name: macos (postgres ${{ matrix.postgres }})
     runs-on: ${{ matrix.os }}
     if: ${{ !startsWith(github.ref_name, 'windows') }}
     strategy:
@@ -68,27 +92,38 @@ jobs:
             os: macos-13
     steps:
       - uses: actions/checkout@v4
-      - uses: ankane/setup-postgres@v1
+
+      - name: Setup Postgres (brew)
+        uses: ankane/setup-postgres@v1
         with:
           postgres-version: ${{ matrix.postgres }}
-      - uses: actions/setup-go@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
         with:
           go-version: '1.21'
-      - run: make
-        env:
-          PG_CFLAGS: -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-warning-option
-      - run: make install
-      - run: |
-          # Ensure PostgreSQL is running and ready
-          brew services start postgresql@${{ matrix.postgres }}
-          # Wait for PostgreSQL to be ready
+
+      - name: Build
+        run: |
+          export PG_CFLAGS="-DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-warning-option"
+          make
+
+      - name: Install
+        run: make install
+
+      - name: Ensure Postgres running (brew)
+        run: |
+          brew services start postgresql@${{ matrix.postgres }} || true
           until pg_isready; do
-            echo "Waiting for PostgreSQL to start..."
+            echo "Waiting for PostgreSQL..."
             sleep 1
           done
-          echo "PostgreSQL is ready!"
-      - run: make installcheck
-      - if: ${{ failure() }}
+
+      - name: installcheck
+        run: make installcheck
+
+      - name: Show regression.diffs on failure
+        if: ${{ failure() }}
         run: |
           echo "Checking for regression.diffs:"
           if [ -f regression.diffs ]; then
@@ -96,11 +131,31 @@ jobs:
           else
             echo "No regression.diffs found"
           fi
-      - run: make clean && $(brew --prefix llvm@$LLVM_VERSION)/bin/scan-build --status-bugs make
+
+      - name: TAP tests support & prove_installcheck
+        run: |
+          brew install cpanm || true
+          cpanm --notest IPC::Run || true
+          TAG=${{ matrix.postgres == 17 && 'REL_17_6' || 'REL_14_19' }}
+          wget -q https://github.com/postgres/postgres/archive/refs/tags/$TAG.tar.gz
+          tar xf $TAG.tar.gz
+          mv postgres-$TAG postgres || true
+        env:
+          TAG: ${{ matrix.postgres == 17 && 'REL_17_6' || 'REL_14_19' }}
+      - name: perl prove tests
+        run: |
+          make prove_installcheck PROVE_FLAGS="-I ./postgres/src/test/perl -I ./test/perl"
+        env:
+          PERL5LIB: /Users/runner/perl5/lib/perl5
+
+      - name: scan-build (optional)
+        run: make clean && $(brew --prefix llvm@$LLVM_VERSION)/bin/scan-build --status-bugs make
         env:
           LLVM_VERSION: ${{ matrix.os == 'macos-15' && 18 || 15 }}
           PG_CFLAGS: -DUSE_ASSERT_CHECKING
+
   windows:
+    name: windows (postgres ${{ matrix.postgres }})
     runs-on: ${{ matrix.os }}
     if: ${{ !startsWith(github.ref_name, 'mac') }}
     strategy:
@@ -113,20 +168,28 @@ jobs:
             os: windows-2022
     steps:
       - uses: actions/checkout@v4
-      - uses: ankane/setup-postgres@v1
+
+      - name: Setup Postgres
+        uses: ankane/setup-postgres@v1
         with:
           postgres-version: ${{ matrix.postgres }}
-      - uses: actions/setup-go@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
         with:
           go-version: '1.21'
-      - run: |
+
+      - name: Build & install (MSVC)
+        run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" && ^
           nmake /NOLOGO /F Makefile.win && ^
           nmake /NOLOGO /F Makefile.win install
-      - run: |
-          # Start PostgreSQL service
-          net start postgresql-x64-${{ matrix.postgres }}
-          # Wait for PostgreSQL to be ready
+        shell: cmd
+
+      - name: Ensure Postgres service started
+        run: |
+          net start postgresql-x64-${{ matrix.postgres }} || echo "Service start may not be required on hosted runner"
+          REM Wait loop for pg_isready
           :wait
           pg_isready
           if errorlevel 1 (
@@ -135,29 +198,44 @@ jobs:
             goto wait
           )
           echo PostgreSQL is ready!
-      - run: make installcheck
-      - run: |
+        shell: cmd
+
+      - name: installcheck
+        run: nmake /NOLOGO /F Makefile.win installcheck
+        shell: cmd
+
+      - name: Clean
+        run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" && ^
           nmake /NOLOGO /F Makefile.win clean
         shell: cmd
-      - if: ${{ failure() }}
+
+      - name: Show regression.diffs on failure
+        if: ${{ failure() }}
         run: |
-          echo "Checking for regression.diffs:"
           if exist regression.diffs (
             type regression.diffs
           ) else (
             echo No regression.diffs found
           )
+        shell: cmd
+
   i386:
+    name: i386 (postgres 15)
     if: ${{ !startsWith(github.ref_name, 'mac') && !startsWith(github.ref_name, 'windows') }}
     runs-on: ubuntu-latest
     container:
       image: debian:12
       options: --platform linux/386
     steps:
-      - run: apt-get update && apt-get install -y build-essential git libipc-run-perl postgresql-15 postgresql-server-dev-15 sudo golang-go
-      - run: service postgresql start
-      - run: |
+      - name: Minimal packages
+        run: apt-get update && apt-get install -y build-essential git libipc-run-perl postgresql-15 postgresql-server-dev-15 sudo golang-go
+
+      - name: Start Postgres
+        run: service postgresql start || true
+
+      - name: Build inside container (i386)
+        run: |
           git clone https://github.com/${{ github.repository }}.git pg-ulid
           cd pg-ulid
           git fetch origin ${{ github.ref }}
@@ -165,18 +243,17 @@ jobs:
           make
           make install
           chown -R postgres .
-          # Ensure PostgreSQL is running and ready
-          service postgresql start
-          # Wait for PostgreSQL to be ready
+          service postgresql start || true
           until pg_isready; do
-            echo "Waiting for PostgreSQL to start..."
+            echo "Waiting for PostgreSQL..."
             sleep 1
           done
-          echo "PostgreSQL is ready!"
           sudo -u postgres make installcheck
         env:
           PG_CFLAGS: -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare
-      - if: ${{ failure() }}
+
+      - name: Show regression.diffs on failure
+        if: ${{ failure() }}
         run: |
           echo "Working directory contents:"
           ls -la
@@ -186,18 +263,30 @@ jobs:
           else
             echo "No regression.diffs found in pg-ulid/"
           fi
+
   valgrind:
+    name: valgrind
     if: ${{ !startsWith(github.ref_name, 'mac') && !startsWith(github.ref_name, 'windows') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ankane/setup-postgres-valgrind@v1
+
+      - name: Setup Postgres (valgrind)
+        uses: ankane/setup-postgres-valgrind@v1
         with:
           postgres-version: 17
           check-ub: yes
-      - uses: actions/setup-go@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
         with:
           go-version: '1.21'
-      - run: make OPTFLAGS=""
-      - run: sudo --preserve-env=PG_CONFIG make install
-      - run: make installcheck
+
+      - name: Build with no OPTFLAGS
+        run: make OPTFLAGS=""
+
+      - name: Install preserving PG_CONFIG
+        run: sudo --preserve-env=PG_CONFIG make install
+
+      - name: installcheck
+        run: make installcheck

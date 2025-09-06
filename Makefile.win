@@ -1,10 +1,10 @@
-# Makefile for ulid extension (Go implementation) - Windows
-
+# Makefile.win for ulid extension (Go implementation)
 EXTENSION = ulid
-DATA = sql/ulid--1.0.0.sql
+VERSION = 1.0.0
+DATA = sql/$(EXTENSION)--$(VERSION).sql
 
 # PostgreSQL extension build system
-PG_CONFIG = pg_config
+PG_CONFIG ?= pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
@@ -13,40 +13,45 @@ all: ulid_generator.exe
 
 # Build the Go binary
 ulid_generator.exe: src/ulid.go
+	@echo Building Go binary...
 	cd src && go mod download
-	cd src && go build -o ../ulid_generator.exe ulid.go
+	cd src && go build -o ../ulid_generator.exe .
 
-# Custom install target for the Go binary
+# Custom install target for the Go binary (respects DESTDIR & bindir)
 install-binary: ulid_generator.exe
-	# Create directory and install the Go binary to bindir
-	mkdir "$(DESTDIR)$(bindir)" 2>nul || true
-	copy ulid_generator.exe "$(DESTDIR)$(bindir)\ulid_generator.exe"
+	@echo Installing ulid_generator.exe to $(DESTDIR)$(bindir)
+	# Create bindir if needed, then copy exe
+	powershell -Command "New-Item -ItemType Directory -Force -Path '$(DESTDIR)$(bindir)' > \$null; Copy-Item -Force ulid_generator.exe -Destination '$(DESTDIR)$(bindir)\ulid_generator.exe'"
 
-# Override the default install to include our binary
+# Install SQL into datadir/extension (do not change source sql)
 install: install-binary
-	# Replace @BINDIR@ placeholder in SQL file with actual bindir
-	powershell -Command "(Get-Content sql/ulid--1.0.0.sql) -replace '@BINDIR@', '$(bindir)' | Set-Content sql/ulid--1.0.0.sql.tmp"
-	move sql\ulid--1.0.0.sql.tmp sql\ulid--1.0.0.sql
+	@echo Installing SQL to $(DESTDIR)$(datadir)\extension
+	powershell -Command "New-Item -ItemType Directory -Force -Path '$(DESTDIR)$(datadir)\extension' > \$null; (Get-Content '$(DATA)') -replace '@BINDIR@','$(bindir)' | Set-Content -Encoding UTF8 '$(DESTDIR)$(datadir)\extension\$(EXTENSION)--$(VERSION).sql'"
+	# invoke PGXS install step to install control file, etc.
+	$(MAKE) -s -f $(top_srcdir)/Makefile install
 
-# Run tests
+# Run tests (Go)
 test:
-	cd test && go test -v
+	cd test && go test -v ./...
 
-# PostgreSQL regression tests
+# PostgreSQL regression tests (Windows)
 installcheck:
 	@echo Running PostgreSQL extension tests...
-	@test\build\ci.bat
-	@if errorlevel 1 (
-		@echo Extension tests failed or PostgreSQL not available.
-		@echo In CI, PostgreSQL should be running. Locally, start PostgreSQL first.
-		@exit /b 1
-	) else (
-		@echo Extension tests passed!
+	@if exist test\build\ci.bat ( \
+		test\build\ci.bat ; \
+		if errorlevel 1 ( \
+			echo Extension tests failed or PostgreSQL not available. && exit /b 1 \
+		) else ( \
+			echo Extension tests passed! \
+		) \
+	) else ( \
+		echo test\build\ci.bat not found; exit /b 1 \
 	)
 
 # Clean build artifacts
 clean:
-	del /Q ulid_generator.exe 2>nul || true
+	if exist ulid_generator.exe del /Q ulid_generator.exe
+	cd src && go clean
 	cd test && go clean -testcache
 
 # Help target
@@ -55,7 +60,8 @@ help:
 	@echo   all      - Build the extension (default)
 	@echo   install  - Install the extension
 	@echo   test     - Run tests
+	@echo   installcheck - Run regression tests (requires PostgreSQL)
 	@echo   clean    - Clean build artifacts
 	@echo   help     - Show this help message
 
-.PHONY: all install test clean help
+.PHONY: all install install-binary test installcheck clean help
