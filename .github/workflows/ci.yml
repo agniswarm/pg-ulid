@@ -47,7 +47,7 @@ jobs:
       - name: Install (preserve PG_CONFIG)
         run: |
           export PG_CONFIG=$(which pg_config)
-          sudo --preserve-env=PG_CONFIG make install
+          sudo --preserve-env=PG_CONFIG make install-local
 
       - name: Ensure Postgres running
         run: |
@@ -286,7 +286,7 @@ jobs:
         run: make OPTFLAGS=""
 
       - name: Install preserving PG_CONFIG
-        run: sudo --preserve-env=PG_CONFIG make install
+        run: sudo --preserve-env=PG_CONFIG make install-local
 
       - name: installcheck
         run: make installcheck
