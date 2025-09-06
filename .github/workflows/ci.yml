@@ -36,7 +36,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.21'
+          go-version: "1.21"
 
       - name: Build
         run: |
@@ -91,7 +91,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.21'
+          go-version: "1.21"
 
       - name: Build
         run: |
@@ -150,7 +150,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.21'
+          go-version: "1.21"
 
       - name: Build & install (MSVC)
         run: |
@@ -224,13 +224,15 @@ jobs:
           ls -la sql || true
           echo "=== repo src/ listing ==="
           ls -la src || true
-          echo "=== Building extension ==="
+          echo "=== Building extension (i386) ==="
+          # build for 386 arch so it runs inside the i386 container
+          export GOARCH=386
           make
           echo "=== Installing binary + SQL (install-local) ==="
           export PG_CONFIG=$(which pg_config)
           sudo --preserve-env=PG_CONFIG make install-local
         env:
-          PG_CFLAGS: -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare
+          PG_CFLAGS: "-DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare"
 
       - name: Ensure Postgres running (i386)
         run: |
@@ -248,7 +250,7 @@ jobs:
           echo "=== Running installcheck as postgres user ==="
           sudo -u postgres make installcheck
         env:
-          PG_CFLAGS: -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare
+          PG_CFLAGS: "-DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare"
 
       - name: Show regression.diffs on failure
         if: ${{ failure() }}
@@ -278,28 +280,32 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.21'
+          go-version: "1.21"
+
       - name: Build with no OPTFLAGS (static-go)
         env:
-          CGO_ENABLED: '0'
+          CGO_ENABLED: "0"
         run: |
           echo "CGO_ENABLED=$CGO_ENABLED"
           make OPTFLAGS=""
+
       - name: Install preserving PG_CONFIG (install-local)
         run: |
           export PG_CONFIG=$(which pg_config)
           sudo --preserve-env=PG_CONFIG make install-local
+
       - name: "Diagnostics: inspect installed binary & extension files"
         run: |
-            set -e
-            BIND="$(pg_config --bindir)"
-            SHARE="$(pg_config --sharedir)"
-            echo "bind: $BIND"
-            echo "share: $SHARE"
-            ls -la "$BIND/ulid_generator" || true
-            file "$BIND/ulid_generator" || true
-            ldd "$BIND/ulid_generator" || true
-            ls -la "$SHARE/extension" || true
+          set -e
+          BIND="$(pg_config --bindir)"
+          SHARE="$(pg_config --sharedir)"
+          echo "bind: $BIND"
+          echo "share: $SHARE"
+          ls -la "$BIND/ulid_generator" || true
+          file "$BIND/ulid_generator" || true
+          ldd "$BIND/ulid_generator" || true
+          ls -la "$SHARE/extension" || true
+
       - name: Run installcheck
         run: |
           make installcheck

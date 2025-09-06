@@ -14,12 +14,12 @@ CONTROL_FILE := $(EXTENSION).control
 
 all: ulid_generator
 
+# Build the Go binary. Do not force CGO by default; honor CGO_ENABLED/GOARCH if set.
 ulid_generator: src/ulid.go
-	@echo "Building Go binary (CGO_ENABLED='$(CGO_ENABLED)')..."
+	@echo "Building Go binary (CGO_ENABLED='$(CGO_ENABLED)' GOARCH='$(GOARCH)')..."
 	cd src && go mod download
-	# If CGO_ENABLED is set in the environment, it will be honored; otherwise go uses its default.
-	@if [ -n "$(CGO_ENABLED)" ]; then \
-		CGO_ENABLED=$(CGO_ENABLED) go build -o ../ulid_generator . ; \
+	@if [ -n "$(CGO_ENABLED)" ] || [ -n "$(GOARCH)" ] ; then \
+		CGO_ENABLED=$(CGO_ENABLED) GOARCH=$(GOARCH) go build -o ../ulid_generator . ; \
 	else \
 		go build -o ../ulid_generator . ; \
 	fi
