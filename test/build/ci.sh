@@ -39,7 +39,7 @@ if ! psql -c "SELECT ulid_random();"; then
 fi
 
 echo "Testing ulid_time() function..."
-if ! psql -c "SELECT ulid_time(extract(epoch from now()) * 1000);"; then
+if ! psql -c "SELECT ulid_time(extract(epoch from now()) * 1000::BIGINT);"; then
     echo "ERROR: ulid_time() function test failed"
     exit 1
 fi
