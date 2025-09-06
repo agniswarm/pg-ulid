@@ -1,7 +1,8 @@
 # Makefile for ulid extension (Go implementation)
 
 EXTENSION = ulid
-VERSION = 1.0.0
+VERSION ?= 1.0.0
+# keep DATA for compatibility but don't rely on it being correct at runtime
 DATA = sql/$(EXTENSION)--$(VERSION).sql
 
 # PostgreSQL extension build system
@@ -9,10 +10,9 @@ PG_CONFIG ?= pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
-# Directory variables provided by PGXS:
-# - bindir : where Postgres binaries live
-# - datadir: top-level share directory
-# We will install the SQL into $(datadir)/extension to avoid mutating source.
+# find the source SQL file dynamically (pick first matching)
+SRC_SQL := $(firstword $(wildcard sql/$(EXTENSION)--*.sql))
+SQL_BASENAME := $(notdir $(SRC_SQL))
 
 # Override the default build target
 all: ulid_generator
@@ -30,14 +30,19 @@ install-binary: ulid_generator
 	install -m 0755 ulid_generator $(DESTDIR)$(bindir)/ulid_generator
 
 # Install extension files AND the binary.
-# Do not mutate the source SQL file; write the generated SQL into the installed datadir.
+# Do not mutate the source SQL file; write the substituted SQL into datadir/extension.
 install: install-binary
-	@echo "Installing SQL to $(DESTDIR)$(datadir)/extension"
+	@echo "Preparing to install SQL..."
+	@if [ -z "$(SRC_SQL)" ]; then \
+		echo "ERROR: no sql/$(EXTENSION)--*.sql file found in source tree."; \
+		echo "       present files:"; ls -la sql || true; \
+		exit 2; \
+	fi
+	@echo "Using source SQL: $(SRC_SQL)"
 	install -d -m 0755 $(DESTDIR)$(datadir)/extension
-	# Replace @BINDIR@ placeholder in SQL and install into datadir/extension
-	sed "s|@BINDIR@|$(bindir)|g" sql/$(EXTENSION)--$(VERSION).sql \
-		> $(DESTDIR)$(datadir)/extension/$(EXTENSION)--$(VERSION).sql
-	# Now run the PGXS-provided install target to install control file, etc.
+	# Replace @BINDIR@ placeholder in the source SQL and install into datadir/extension
+	sed "s|@BINDIR@|$(bindir)|g" "$(SRC_SQL)" > "$(DESTDIR)$(datadir)/extension/$(SQL_BASENAME)"
+	# Call PGXS install to put control file, etc., in place
 	$(MAKE) -s -f $(top_srcdir)/Makefile install
 
 # Run Go unit tests
