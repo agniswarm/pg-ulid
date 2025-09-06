@@ -281,30 +281,84 @@ jobs:
         with:
           go-version: "1.21"
 
-      - name: Build with no OPTFLAGS (static-go)
+      - name: Build static Go binary for valgrind
         env:
           CGO_ENABLED: "0"
         run: |
-          echo "CGO_ENABLED=$CGO_ENABLED"
+          echo "Building static Go binary for valgrind (CGO_ENABLED=$CGO_ENABLED)"
+          # show go env for debugging
+          go version
+          go env | grep -E "(GOARCH|GOOS|CGO_ENABLED|GOROOT|GOMOD)" || true
+          # build
           make OPTFLAGS=""
 
       - name: Install preserving PG_CONFIG (install-local)
         run: |
           export PG_CONFIG=$(which pg_config)
+          echo "Using PG_CONFIG=$PG_CONFIG"
           sudo --preserve-env=PG_CONFIG make install-local
 
-      - name: "Diagnostics: inspect installed binary & extension files"
+      - name: Valgrind diagnostics - check installed binary & files
+        run: |
+          set -euo pipefail
+          BIND=$(pg_config --bindir)
+          SHARE=$(pg_config --sharedir)
+          echo "pg binddir: $BIND"
+          echo "pg sharedir: $SHARE"
+          echo; echo "ls -la binddir:"
+          ls -la "$BIND" || true
+          echo; echo "ls -la extension dir:"
+          ls -la "$SHARE/extension" || true
+          echo; echo "binary file:"
+          file "$BIND/ulid_generator" || true
+          echo; echo "ldd (may fail for static):"
+          ldd "$BIND/ulid_generator" || true
+          echo; echo "stat perms:"
+          stat -c '%U %G %a %n' "$BIND/ulid_generator" || true
+
+      - name: Valgrind diagnostics - run binary directly as runner
+        run: |
+          set +e
+          BIND=$(pg_config --bindir)
+          echo; echo "Run as runner user: $BIND/ulid_generator generate"
+          "$BIND/ulid_generator" generate > /tmp/ulid_out 2>/tmp/ulid_err
+          EC=$?
+          echo "exitcode=$EC"
+          echo "stdout:"
+          sed -n '1,200p' /tmp/ulid_out || true
+          echo "stderr:"
+          sed -n '1,200p' /tmp/ulid_err || true
+          set -e
+
+      - name: Valgrind diagnostics - run binary as postgres user
+        run: |
+          set +e
+          BIND=$(pg_config --bindir)
+          echo; echo "Run as postgres user: $BIND/ulid_generator generate"
+          # run and capture output in files so we can read them as postgres user
+          sudo -u postgres bash -lc "'$BIND/ulid_generator' generate > /tmp/ulid_out_pg 2> /tmp/ulid_err_pg" || true
+          RC=$?
+          echo "postgres-run exitcode=$RC"
+          echo "postgres stdout:"
+          sudo -u postgres bash -lc 'sed -n "1,200p" /tmp/ulid_out_pg || true'
+          echo "postgres stderr:"
+          sudo -u postgres bash -lc 'sed -n "1,200p" /tmp/ulid_err_pg || true'
+          set -e
+
+      - name: Valgrind diagnostics - run binary under valgrind (as postgres)
+        run: |
+          set -euo pipefail
+          # try running the ulid_generator under valgrind to see valgrind messages
+          # valgrind might not be installed in the runner image, but ankane/setup-postgres-valgrind should provide it
+          BIND=$(pg_config --bindir)
+          echo "Running valgrind on the ulid_generator (timeout 20s)..."
+          # run as postgres user to mimic COPY FROM PROGRAM environment
+          sudo -u postgres timeout 20s valgrind --error-exitcode=1 --leak-check=full --log-file=/tmp/valgrind_ulid.log "$BIND/ulid_generator" generate || true
+          echo "=== valgrind log (first 200 lines) ==="
+          sudo -u postgres bash -lc 'sed -n "1,200p" /tmp/valgrind_ulid.log || true'
+          echo "=== end valgrind log ==="
+
+      - name: Run installcheck (valgrind)
         run: |
           set -e
-          BIND="$(pg_config --bindir)"
-          SHARE="$(pg_config --sharedir)"
-          echo "bind: $BIND"
-          echo "share: $SHARE"
-          ls -la "$BIND/ulid_generator" || true
-          file "$BIND/ulid_generator" || true
-          ldd "$BIND/ulid_generator" || true
-          ls -la "$SHARE/extension" || true
-
-      - name: Run installcheck
-        run: |
           make installcheck
