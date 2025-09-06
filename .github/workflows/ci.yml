@@ -225,7 +225,6 @@ jobs:
           echo "=== repo src/ listing ==="
           ls -la src || true
           echo "=== Building extension (i386) ==="
-          # build for 386 arch so it runs inside the i386 container
           export GOARCH=386
           make
           echo "=== Installing binary + SQL (install-local) ==="
