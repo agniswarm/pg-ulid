@@ -16,13 +16,14 @@ ulid_generator: src/ulid.go
 	cd src && go mod download
 	cd src && go build -o ../ulid_generator ulid.go
 
-# Install the binary
-install: ulid_generator
+# Custom install target for the Go binary
+install-binary: ulid_generator
 	# Create directory and install the Go binary
 	mkdir -p $(DESTDIR)$(bindir)
 	install -m 755 ulid_generator $(DESTDIR)$(bindir)/ulid_generator
-	# Install extension files using PostgreSQL's standard installation
-	$(MAKE) -C . install-data
+
+# Override the default install to include our binary
+install: install-binary
 
 # Run tests
 test:
