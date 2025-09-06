@@ -6,20 +6,49 @@ DATA = sql/$(EXTENSION)--$(VERSION).sql
 # Default target
 all: ulid_generator.exe
 
-# Build the Go binary
+# Build the Go binary (fixed cd issue)
+# Use a single cmd line that changes into src, runs go commands, and returns to caller
 ulid_generator.exe:
 	@echo Building Go binary...
-	cd src && go mod download && cd src && go build -o ..\ulid_generator.exe .
+	@cd src && go mod download && go build -o ..\ulid_generator.exe .
 
 # install-binary: copy the exe into PostgreSQL bindir (respects DESTDIR if set)
 install-binary: ulid_generator.exe
 	@echo Installing ulid_generator.exe to destination bindir...
-	powershell -NoProfile -Command "& { $bind = (& pg_config --bindir).Trim(); $dest = '$(DESTDIR)'; if (-not $dest) { $dest = '' }; $target = Join-Path $dest $bind; New-Item -ItemType Directory -Force -Path $target | Out-Null; Copy-Item -Force ulid_generator.exe -Destination (Join-Path $target 'ulid_generator.exe'); Write-Host 'Installed:' (Join-Path $target 'ulid_generator.exe') }"
+	powershell -NoProfile -Command "& {
+	  try {
+	    $bind = (& pg_config --bindir).Trim();
+	  } catch {
+	    Write-Host 'ERROR: pg_config not found or failed.'; exit 2;
+	  }
+	  $dest = '$(DESTDIR)';
+	  if (-not $dest) { $dest = '' }
+	  $target = Join-Path $dest $bind;
+	  New-Item -ItemType Directory -Force -Path $target | Out-Null;
+	  Copy-Item -Force ulid_generator.exe -Destination (Join-Path $target 'ulid_generator.exe');
+	  Write-Host 'Installed:' (Join-Path $target 'ulid_generator.exe');
+	}"
 
 # install: put the substituted SQL into Postgres shared extension dir (no PGXS install call)
 install: install-binary
 	@echo Installing SQL to Postgres shared extension directory...
-	powershell -NoProfile -Command "& { $share = (& pg_config --sharedir).Trim(); $bind = (& pg_config --bindir).Trim(); $dest = '$(DESTDIR)'; if (-not $dest) { $dest = '' }; $instDir = Join-Path $dest $share; $extDir = Join-Path $instDir 'extension'; New-Item -ItemType Directory -Force -Path $extDir | Out-Null; $src = Resolve-Path '$(DATA)'; if (-not (Test-Path $src)) { Write-Host 'ERROR: SQL source $(DATA) not found'; exit 2 }; (Get-Content $src) -replace '@BINDIR@', $bind | Set-Content -Encoding UTF8 (Join-Path $extDir '$(EXTENSION)--$(VERSION).sql'); Write-Host 'Installed SQL to:' (Join-Path $extDir '$(EXTENSION)--$(VERSION).sql') }"
+	powershell -NoProfile -Command "& {
+	  try {
+	    $share = (& pg_config --sharedir).Trim();
+	    $bind = (& pg_config --bindir).Trim();
+	  } catch {
+	    Write-Host 'ERROR: pg_config not found or failed.'; exit 2;
+	  }
+	  $dest = '$(DESTDIR)';
+	  if (-not $dest) { $dest = '' }
+	  $instDir = Join-Path $dest $share;
+	  $extDir = Join-Path $instDir 'extension';
+	  New-Item -ItemType Directory -Force -Path $extDir | Out-Null;
+	  $srcPath = Resolve-Path '$(DATA)' -ErrorAction SilentlyContinue;
+	  if (-not $srcPath) { Write-Host 'ERROR: SQL source $(DATA) not found'; exit 3 }
+	  (Get-Content $srcPath) -replace '@BINDIR@', $bind | Set-Content -Encoding UTF8 (Join-Path $extDir '$(EXTENSION)--$(VERSION).sql');
+	  Write-Host 'Installed SQL to:' (Join-Path $extDir '$(EXTENSION)--$(VERSION).sql');
+	}"
 
 # Run Go tests
 test:
@@ -33,8 +62,8 @@ installcheck:
 # Clean
 clean:
 	@if exist ulid_generator.exe del /Q ulid_generator.exe
-	cd src && go clean || true
-	cd test && go clean -testcache || true
+	@if exist src ( cd src && go clean )
+	@if exist test ( cd test && go clean -testcache )
 
 # Help
 help:
