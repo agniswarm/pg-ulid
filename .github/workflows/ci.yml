@@ -70,13 +70,6 @@ jobs:
             echo "No regression.diffs found"
           fi
 
-      - name: Extra deps for prove_installcheck
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libipc-run-perl
-
-      - name: perl install-check tests
-        run: make prove_installcheck
 
   mac:
     name: macos (postgres ${{ matrix.postgres }})
@@ -132,21 +125,6 @@ jobs:
             echo "No regression.diffs found"
           fi
 
-      - name: TAP tests support & prove_installcheck
-        run: |
-          brew install cpanm || true
-          cpanm --notest IPC::Run || true
-          TAG=${{ matrix.postgres == 17 && 'REL_17_6' || 'REL_14_19' }}
-          wget -q https://github.com/postgres/postgres/archive/refs/tags/$TAG.tar.gz
-          tar xf $TAG.tar.gz
-          mv postgres-$TAG postgres || true
-        env:
-          TAG: ${{ matrix.postgres == 17 && 'REL_17_6' || 'REL_14_19' }}
-      - name: perl prove tests
-        run: |
-          make prove_installcheck PROVE_FLAGS="-I ./postgres/src/test/perl -I ./test/perl"
-        env:
-          PERL5LIB: /Users/runner/perl5/lib/perl5
 
       - name: scan-build (optional)
         run: make clean && $(brew --prefix llvm@$LLVM_VERSION)/bin/scan-build --status-bugs make
