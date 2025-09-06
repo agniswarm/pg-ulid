@@ -31,7 +31,7 @@ test:
 
 # PostgreSQL regression tests
 installcheck:
-	cd test && go test -v -run TestSQL
+	test\build\ci.bat
 
 # Clean build artifacts
 clean:
