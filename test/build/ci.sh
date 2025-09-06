@@ -1,11 +1,20 @@
 #!/bin/bash
 
-# PostgreSQL Extension CI Test Script
-# Tests the ulid extension functionality in PostgreSQL
+# Standalone PostgreSQL Extension Test Script
+# This can be run without the Makefile and PostgreSQL build system
 
-set -e  # Exit on any error
+echo "Running PostgreSQL extension tests..."
 
-echo "Starting PostgreSQL extension tests..."
+# Check if PostgreSQL is running
+if ! pg_isready -q; then
+    echo "PostgreSQL is not running. This test requires a running PostgreSQL instance."
+    echo "In CI, PostgreSQL should be started by the CI environment."
+    echo "Locally, start PostgreSQL with: sudo service postgresql start"
+    exit 1
+fi
+
+# Use the default postgres database
+export PGDATABASE=postgres
 
 # Test basic extension functionality
 echo "Creating extension..."

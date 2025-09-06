@@ -29,9 +29,17 @@ install: install-binary
 test:
 	cd test && go test -v
 
-# PostgreSQL regression tests
+# PostgreSQL regression tests (requires PostgreSQL to be running)
 installcheck:
-	./test/build/ci.sh
+	@echo "Running PostgreSQL extension tests..."
+	@if ./test/build/ci.sh; then \
+		echo "Extension tests passed!"; \
+	else \
+		echo "Extension tests failed or PostgreSQL not available."; \
+		echo "In CI, PostgreSQL should be running. Locally, start PostgreSQL first."; \
+		exit 1; \
+	fi
+
 
 # Run comprehensive test suite
 test-all: test

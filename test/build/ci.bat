@@ -1,8 +1,20 @@
 @echo off
-REM PostgreSQL Extension CI Test Script for Windows
-REM Tests the ulid extension functionality in PostgreSQL
+REM Standalone PostgreSQL Extension Test Script for Windows
+REM This can be run without the Makefile and PostgreSQL build system
 
-echo Starting PostgreSQL extension tests...
+echo Running PostgreSQL extension tests...
+
+REM Check if PostgreSQL is running
+pg_isready >nul 2>&1
+if errorlevel 1 (
+    echo PostgreSQL is not running. This test requires a running PostgreSQL instance.
+    echo In CI, PostgreSQL should be started by the CI environment.
+    echo Locally, start PostgreSQL with: net start postgresql
+    exit /b 1
+)
+
+REM Use the default postgres database
+set PGDATABASE=postgres
 
 REM Test basic extension functionality
 echo Creating extension...

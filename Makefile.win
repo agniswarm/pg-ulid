@@ -31,7 +31,15 @@ test:
 
 # PostgreSQL regression tests
 installcheck:
-	test\build\ci.bat
+	@echo Running PostgreSQL extension tests...
+	@test\build\ci.bat
+	@if errorlevel 1 (
+		@echo Extension tests failed or PostgreSQL not available.
+		@echo In CI, PostgreSQL should be running. Locally, start PostgreSQL first.
+		@exit /b 1
+	) else (
+		@echo Extension tests passed!
+	)
 
 # Clean build artifacts
 clean:

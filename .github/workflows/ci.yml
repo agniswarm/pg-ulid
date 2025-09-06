@@ -37,6 +37,15 @@ jobs:
       - run: |
           export PG_CONFIG=`which pg_config`
           sudo --preserve-env=PG_CONFIG make install
+      - run: |
+          # Ensure PostgreSQL is running and ready
+          sudo service postgresql start
+          # Wait for PostgreSQL to be ready
+          until pg_isready; do
+            echo "Waiting for PostgreSQL to start..."
+            sleep 1
+          done
+          echo "PostgreSQL is ready!"
       - run: make installcheck
       - if: ${{ failure() }}
         run: |
@@ -69,6 +78,15 @@ jobs:
         env:
           PG_CFLAGS: -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-warning-option
       - run: make install
+      - run: |
+          # Ensure PostgreSQL is running and ready
+          brew services start postgresql@${{ matrix.postgres }}
+          # Wait for PostgreSQL to be ready
+          until pg_isready; do
+            echo "Waiting for PostgreSQL to start..."
+            sleep 1
+          done
+          echo "PostgreSQL is ready!"
       - run: make installcheck
       - if: ${{ failure() }}
         run: |
@@ -104,8 +122,22 @@ jobs:
       - run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" && ^
           nmake /NOLOGO /F Makefile.win && ^
-          nmake /NOLOGO /F Makefile.win install && ^
-          nmake /NOLOGO /F Makefile.win installcheck && ^
+          nmake /NOLOGO /F Makefile.win install
+      - run: |
+          # Start PostgreSQL service
+          net start postgresql-x64-${{ matrix.postgres }}
+          # Wait for PostgreSQL to be ready
+          :wait
+          pg_isready
+          if errorlevel 1 (
+            echo Waiting for PostgreSQL to start...
+            timeout /t 1 /nobreak >nul
+            goto wait
+          )
+          echo PostgreSQL is ready!
+      - run: make installcheck
+      - run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" && ^
           nmake /NOLOGO /F Makefile.win clean
         shell: cmd
       - if: ${{ failure() }}
@@ -133,6 +165,14 @@ jobs:
           make
           make install
           chown -R postgres .
+          # Ensure PostgreSQL is running and ready
+          service postgresql start
+          # Wait for PostgreSQL to be ready
+          until pg_isready; do
+            echo "Waiting for PostgreSQL to start..."
+            sleep 1
+          done
+          echo "PostgreSQL is ready!"
           sudo -u postgres make installcheck
         env:
           PG_CFLAGS: -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare
