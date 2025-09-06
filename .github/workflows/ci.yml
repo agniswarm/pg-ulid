@@ -159,8 +159,15 @@ jobs:
 
       - name: Build & install (MSVC)
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" && ^
-          nmake /NOLOGO /F Makefile.win && ^
+          rem Initialize MSVC environment for x64 in this same shell
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          rem Diagnostics so logs show required tools
+          where cl || echo "cl not found"
+          where nmake || echo "nmake not found"
+          where pg_config || echo "pg_config not found"
+          where go || echo "go not found"
+          rem Build and install in the same session so vcvars64 settings apply
+          nmake /NOLOGO /F Makefile.win
           nmake /NOLOGO /F Makefile.win install
         shell: cmd
 
@@ -179,12 +186,15 @@ jobs:
         shell: cmd
 
       - name: installcheck
-        run: nmake /NOLOGO /F Makefile.win installcheck
+        run: |
+          rem Ensure MSVC env is loaded for nmake in this same shell
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          nmake /NOLOGO /F Makefile.win installcheck
         shell: cmd
 
       - name: Clean
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" && ^
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
           nmake /NOLOGO /F Makefile.win clean
         shell: cmd
 
