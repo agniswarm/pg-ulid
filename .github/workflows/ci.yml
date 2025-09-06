@@ -212,23 +212,40 @@ jobs:
       - name: Start Postgres
         run: service postgresql start || true
 
-      - name: Build inside container (i386)
+      - name: Build & install (i386)
+        id: build_install
         run: |
           set -e
           git clone https://github.com/${{ github.repository }}.git pg-ulid
           cd pg-ulid
           git fetch origin ${{ github.ref }}
           git reset --hard FETCH_HEAD
+          echo "=== repo sql/ listing ==="
           ls -la sql || true
+          echo "=== repo src/ listing ==="
           ls -la src || true
+          echo "=== Building extension ==="
           make
+          echo "=== Installing binary + SQL (install-local) ==="
           export PG_CONFIG=$(which pg_config)
           sudo --preserve-env=PG_CONFIG make install-local
+        env:
+          PG_CFLAGS: -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare
+
+      - name: Ensure Postgres running (i386)
+        run: |
           sudo service postgresql start || true
           until pg_isready; do
             echo "Waiting for PostgreSQL..."
             sleep 1
           done
+
+      - name: Run regression tests (i386)
+        id: run_tests
+        run: |
+          set -e
+          cd pg-ulid
+          echo "=== Running installcheck as postgres user ==="
           sudo -u postgres make installcheck
         env:
           PG_CFLAGS: -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare
@@ -236,10 +253,13 @@ jobs:
       - name: Show regression.diffs on failure
         if: ${{ failure() }}
         run: |
+          echo "Working directory contents:"
+          ls -la
+          echo "Checking for regression.diffs:"
           if [ -f pg-ulid/regression.diffs ]; then
             cat pg-ulid/regression.diffs
           else
-            echo "No regression.diffs found"
+            echo "No regression.diffs found in pg-ulid/"
           fi
 
   valgrind:
