@@ -42,7 +42,7 @@ if errorlevel 1 (
 )
 
 echo Testing ulid_time() function...
-psql -c "SELECT ulid_time(extract(epoch from now()) * 1000::BIGINT);"
+psql -c "SELECT ulid_time((extract(epoch from now()) * 1000)::BIGINT);"
 if errorlevel 1 (
     echo ERROR: ulid_time() function test failed
     exit /b 1
