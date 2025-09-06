@@ -6,55 +6,26 @@ DATA = sql/$(EXTENSION)--$(VERSION).sql
 # Default target
 all: ulid_generator.exe
 
-# Build the Go binary (fixed cd issue)
-# Use a single cmd line that changes into src, runs go commands, and returns to caller
+# Build the Go binary
 ulid_generator.exe:
 	@echo Building Go binary...
 	@cd src && go mod download && go build -o ..\ulid_generator.exe .
 
-# install-binary: copy the exe into PostgreSQL bindir (respects DESTDIR if set)
+# install-binary: call powershell script to copy exe into Postgres bindir (respects DESTDIR if set)
 install-binary: ulid_generator.exe
-	@echo Installing ulid_generator.exe to destination bindir...
-	powershell -NoProfile -Command "& {
-	  try {
-	    $bind = (& pg_config --bindir).Trim();
-	  } catch {
-	    Write-Host 'ERROR: pg_config not found or failed.'; exit 2;
-	  }
-	  $dest = '$(DESTDIR)';
-	  if (-not $dest) { $dest = '' }
-	  $target = Join-Path $dest $bind;
-	  New-Item -ItemType Directory -Force -Path $target | Out-Null;
-	  Copy-Item -Force ulid_generator.exe -Destination (Join-Path $target 'ulid_generator.exe');
-	  Write-Host 'Installed:' (Join-Path $target 'ulid_generator.exe');
-	}"
+	@echo Installing ulid_generator.exe to destination bindir (via scripts\install_windows.ps1)...
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install_windows.ps1 "$(DESTDIR)"
 
-# install: put the substituted SQL into Postgres shared extension dir (no PGXS install call)
+# install: call powershell script to write substituted SQL into Postgres shared extension dir
 install: install-binary
-	@echo Installing SQL to Postgres shared extension directory...
-	powershell -NoProfile -Command "& {
-	  try {
-	    $share = (& pg_config --sharedir).Trim();
-	    $bind = (& pg_config --bindir).Trim();
-	  } catch {
-	    Write-Host 'ERROR: pg_config not found or failed.'; exit 2;
-	  }
-	  $dest = '$(DESTDIR)';
-	  if (-not $dest) { $dest = '' }
-	  $instDir = Join-Path $dest $share;
-	  $extDir = Join-Path $instDir 'extension';
-	  New-Item -ItemType Directory -Force -Path $extDir | Out-Null;
-	  $srcPath = Resolve-Path '$(DATA)' -ErrorAction SilentlyContinue;
-	  if (-not $srcPath) { Write-Host 'ERROR: SQL source $(DATA) not found'; exit 3 }
-	  (Get-Content $srcPath) -replace '@BINDIR@', $bind | Set-Content -Encoding UTF8 (Join-Path $extDir '$(EXTENSION)--$(VERSION).sql');
-	  Write-Host 'Installed SQL to:' (Join-Path $extDir '$(EXTENSION)--$(VERSION).sql');
-	}"
+	@echo Installing SQL to Postgres shared extension directory (via scripts\install_sql_windows.ps1)...
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install_sql_windows.ps1 "$(DESTDIR)" "$(DATA)" "$(EXTENSION)" "$(VERSION)"
 
 # Run Go tests
 test:
 	@cd test && go test -v ./...
 
-# Windows installcheck: call the Windows CI script if present
+# Windows installcheck: call Windows CI script if present
 installcheck:
 	@echo Running PostgreSQL extension tests (Windows)...
 	@if exist test\build\ci.bat ( test\build\ci.bat && (echo Extension tests passed!) || (echo Extension tests failed! & exit /b 1) ) else ( echo test\build\ci.bat not found; exit /b 1 )
