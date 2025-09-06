@@ -1,0 +1,47 @@
+# Build artifacts
+ulid_generator
+*.so
+*.dylib
+*.dll
+
+# Go build cache
+go.sum.bak
+*.test
+*.prof
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# PostgreSQL extension files (generated)
+*.control.bak
+*.sql.bak
+
+# Test artifacts
+test_results/
+coverage.out
+coverage.html
+
+# Docker
+.dockerignore
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Backup files
+*.bak
+*.backup
