@@ -40,7 +40,6 @@ jobs:
 
       - name: Build
         run: |
-          # set PG_CFLAGS with the extra flag for PG >= 18
           export PG_CFLAGS="${{ matrix.postgres >= 18 && '-Wno-missing-field-initializers' || '' }} -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare"
           make
 
@@ -63,13 +62,11 @@ jobs:
       - name: Show regression.diffs on failure
         if: ${{ failure() }}
         run: |
-          echo "Checking for regression.diffs:"
           if [ -f regression.diffs ]; then
             cat regression.diffs
           else
             echo "No regression.diffs found"
           fi
-
 
   mac:
     name: macos (postgres ${{ matrix.postgres }})
@@ -118,13 +115,11 @@ jobs:
       - name: Show regression.diffs on failure
         if: ${{ failure() }}
         run: |
-          echo "Checking for regression.diffs:"
           if [ -f regression.diffs ]; then
             cat regression.diffs
           else
             echo "No regression.diffs found"
           fi
-
 
       - name: scan-build (optional)
         run: make clean && $(brew --prefix llvm@$LLVM_VERSION)/bin/scan-build --status-bugs make
@@ -159,26 +154,22 @@ jobs:
 
       - name: Build & install (MSVC)
         run: |
-          rem Initialize MSVC environment for x64 in this same shell
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-          rem Diagnostics so logs show required tools
           where cl || echo "cl not found"
           where nmake || echo "nmake not found"
           where pg_config || echo "pg_config not found"
           where go || echo "go not found"
-          rem Build and install in the same session so vcvars64 settings apply
           nmake /NOLOGO /F Makefile.win
           nmake /NOLOGO /F Makefile.win install
         shell: cmd
 
       - name: Ensure Postgres service started
         run: |
-          net start postgresql-x64-${{ matrix.postgres }} || echo "Service start may not be required on hosted runner"
-          REM Wait loop for pg_isready
+          net start postgresql-x64-${{ matrix.postgres }} || echo "Service may not need manual start"
           :wait
           pg_isready
           if errorlevel 1 (
-            echo Waiting for PostgreSQL to start...
+            echo Waiting for PostgreSQL...
             timeout /t 1 /nobreak >nul
             goto wait
           )
@@ -187,7 +178,6 @@ jobs:
 
       - name: installcheck
         run: |
-          rem Ensure MSVC env is loaded for nmake in this same shell
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
           nmake /NOLOGO /F Makefile.win installcheck
         shell: cmd
@@ -224,14 +214,17 @@ jobs:
 
       - name: Build inside container (i386)
         run: |
+          set -e
           git clone https://github.com/${{ github.repository }}.git pg-ulid
           cd pg-ulid
           git fetch origin ${{ github.ref }}
           git reset --hard FETCH_HEAD
+          ls -la sql || true
+          ls -la src || true
           make
-          make install
-          chown -R postgres .
-          service postgresql start || true
+          export PG_CONFIG=$(which pg_config)
+          sudo --preserve-env=PG_CONFIG make install-local
+          sudo service postgresql start || true
           until pg_isready; do
             echo "Waiting for PostgreSQL..."
             sleep 1
@@ -243,13 +236,10 @@ jobs:
       - name: Show regression.diffs on failure
         if: ${{ failure() }}
         run: |
-          echo "Working directory contents:"
-          ls -la
-          echo "Checking for regression.diffs:"
           if [ -f pg-ulid/regression.diffs ]; then
             cat pg-ulid/regression.diffs
           else
-            echo "No regression.diffs found in pg-ulid/"
+            echo "No regression.diffs found"
           fi
 
   valgrind:
