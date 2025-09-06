@@ -1,9 +1,26 @@
+<#
+scripts/install_sql_windows.ps1
+
+Installs extension SQL and control file into PostgreSQL shared extension dir on Windows.
+Writes substituted SQL as UTF-8 WITHOUT BOM so Postgres doesn't choke on an invisible BOM char.
+#>
+
 param(
   [string]$DestDir = "",
   [string]$SrcSql = "sql/ulid--1.0.0.sql",
   [string]$Ext = "ulid",
   [string]$Ver = "1.0.0"
 )
+
+# Helper: write UTF8 without BOM
+function Write-Utf8-NoBOM {
+  param (
+    [string]$Path,
+    [string]$Content
+  )
+  $bytes = [System.Text.Encoding]::UTF8.GetBytes($Content)
+  [System.IO.File]::WriteAllBytes($Path, $bytes)
+}
 
 # Get pg sharedir and bindir
 try {
@@ -33,10 +50,9 @@ if (-not (Test-Path $controlSrc)) {
   Write-Host "Installed control file: $controlDest"
 }
 
-# Find a SQL file if the given SrcSql is not present; prefer wildcard match
+# Find SQL source: try explicit param, else pick first sql/ulid--*.sql
 $srcSqlPath = Resolve-Path $SrcSql -ErrorAction SilentlyContinue
 if (-not $srcSqlPath) {
-  # try to find any sql/ulid--*.sql
   $candidates = Get-ChildItem -Path sql -Filter "$Ext--*.sql" -File -ErrorAction SilentlyContinue | Sort-Object Name
   if ($candidates -and $candidates.Count -gt 0) {
     $srcSqlPath = $candidates[0].FullName
@@ -47,17 +63,29 @@ if (-not $srcSqlPath) {
 }
 
 if ($srcSqlPath) {
+  # Read raw SQL (preserve line endings)
+  $raw = Get-Content $srcSqlPath -Raw
+
+  # Determine program path to substitute:
+  # On Windows use ulid_generator.exe; use forward slashes to be safe in SQL COPY FROM PROGRAM
+  $prog = (Join-Path $bind 'ulid_generator.exe') -replace '\\','/'
+  # Also support replacing instances that use backslashes in SQL
+  $raw = $raw -replace '@BINDIR@/ulid_generator', $prog
+  $raw = $raw -replace '@BINDIR@\\ulid_generator', $prog
+  $raw = $raw -replace '@BINDIR@', ($bind -replace '\\','/')
+
   $destSql = Join-Path $extDir ("$Ext--$Ver.sql")
+
   try {
-    (Get-Content $srcSqlPath) -replace '@BINDIR@', $bind | Set-Content -Encoding UTF8 $destSql
-    Write-Host "Installed substituted SQL to: $destSql"
+    Write-Utf8-NoBOM -Path $destSql -Content $raw
+    Write-Host "Installed substituted SQL to: $destSql (UTF-8 without BOM)"
   } catch {
     Write-Error "Failed to write substituted SQL to $destSql : $_"
     exit 4
   }
 }
 
-# Copy additional sql files (upgrade scripts) if present
+# Copy additional sql files (upgrade scripts) if any, as-is (preserve bytes)
 Get-ChildItem -Path sql -Filter "$Ext--*.sql" -File -ErrorAction SilentlyContinue | ForEach-Object {
   $name = $_.Name
   $dest = Join-Path $extDir $name
