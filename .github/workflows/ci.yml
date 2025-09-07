@@ -89,6 +89,8 @@ jobs:
       - name: Build
         run: |
           export PG_CFLAGS="-DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-warning-option"
+          make clean || true
+          rm -f src/*.o src/*.bc || true
           make
 
       - name: Install
@@ -146,6 +148,11 @@ jobs:
           where cl || echo "cl not found"
           where nmake || echo "nmake not found"
           where pg_config || echo "pg_config not found"
+          for /f "tokens=*" %%i in ('pg_config --includedir') do set PG_INCLUDEDIR=%%i
+          for /f "tokens=*" %%i in ('pg_config --includedir-server') do set PG_INCLUDEDIR_SERVER=%%i
+          for /f "tokens=*" %%i in ('pg_config --pkglibdir') do set PG_PKGLIBDIR=%%i
+          for /f "tokens=*" %%i in ('pg_config --sharedir') do set PG_SHAREDIR=%%i
+          nmake /NOLOGO /F Makefile.win clean
           nmake /NOLOGO /F Makefile.win
           nmake /NOLOGO /F Makefile.win install
         shell: cmd
@@ -166,12 +173,20 @@ jobs:
       - name: installcheck
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          for /f "tokens=*" %%i in ('pg_config --includedir') do set PG_INCLUDEDIR=%%i
+          for /f "tokens=*" %%i in ('pg_config --includedir-server') do set PG_INCLUDEDIR_SERVER=%%i
+          for /f "tokens=*" %%i in ('pg_config --pkglibdir') do set PG_PKGLIBDIR=%%i
+          for /f "tokens=*" %%i in ('pg_config --sharedir') do set PG_SHAREDIR=%%i
           nmake /NOLOGO /F Makefile.win installcheck
         shell: cmd
 
       - name: Clean
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          for /f "tokens=*" %%i in ('pg_config --includedir') do set PG_INCLUDEDIR=%%i
+          for /f "tokens=*" %%i in ('pg_config --includedir-server') do set PG_INCLUDEDIR_SERVER=%%i
+          for /f "tokens=*" %%i in ('pg_config --pkglibdir') do set PG_PKGLIBDIR=%%i
+          for /f "tokens=*" %%i in ('pg_config --sharedir') do set PG_SHAREDIR=%%i
           nmake /NOLOGO /F Makefile.win clean
         shell: cmd
 
@@ -210,6 +225,9 @@ jobs:
           ls -la sql || true
           echo "=== repo src/ listing ==="
           ls -la src || true
+          echo "=== Cleaning previous build artifacts ==="
+          make clean || true
+          rm -f src/*.o src/*.bc || true
           echo "=== Building extension (i386) ==="
           make
           echo "=== Installing extension ==="

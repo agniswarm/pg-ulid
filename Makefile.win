@@ -9,7 +9,6 @@ OBJS = src/ulid.obj
 
 # PostgreSQL configuration
 PG_CONFIG ?= pg_config
-PGXS := $(shell $(PG_CONFIG) --pgxs)
 
 # Default target
 all: $(MODULE_big).dll
@@ -21,16 +20,16 @@ $(MODULE_big).dll: $(OBJS)
 
 src/ulid.obj: src/ulid.c
 	@echo Compiling C source...
-	@$(CC) /c /I"$(shell $(PG_CONFIG) --includedir)" /I"$(shell $(PG_CONFIG) --includedir-server)" src/ulid.c /Fo$@
+	@$(CC) /c /I"$(PG_INCLUDEDIR)" /I"$(PG_INCLUDEDIR_SERVER)" src/ulid.c /Fo$@
 
 # Install the extension
 install: all
 	@echo Installing extension...
-	@if not exist "$(shell $(PG_CONFIG) --pkglibdir)" mkdir "$(shell $(PG_CONFIG) --pkglibdir)"
-	@copy $(MODULE_big).dll "$(shell $(PG_CONFIG) --pkglibdir)\"
-	@if not exist "$(shell $(PG_CONFIG) --sharedir)\extension" mkdir "$(shell $(PG_CONFIG) --sharedir)\extension"
-	@copy $(DATA) "$(shell $(PG_CONFIG) --sharedir)\extension\"
-	@copy ulid.control "$(shell $(PG_CONFIG) --sharedir)\extension\"
+	@if not exist "$(PG_PKGLIBDIR)" mkdir "$(PG_PKGLIBDIR)"
+	@copy $(MODULE_big).dll "$(PG_PKGLIBDIR)\"
+	@if not exist "$(PG_SHAREDIR)\extension" mkdir "$(PG_SHAREDIR)\extension"
+	@copy $(DATA) "$(PG_SHAREDIR)\extension\"
+	@copy ulid.control "$(PG_SHAREDIR)\extension\"
 
 # Windows installcheck: call Windows CI script if present
 installcheck:

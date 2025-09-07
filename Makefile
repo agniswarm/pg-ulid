@@ -22,14 +22,12 @@ include $(PGXS)
 # Clean targets
 clean:
 	rm -f src/*.o
+	rm -f src/*.bc
 	rm -f $(MODULE_big).so
 	rm -f $(MODULE_big).dll
+	rm -f $(MODULE_big).dylib
 	rm -f regression.diffs
 	rm -f regression.out
-
-# Install target (standard PostgreSQL extension install)
-install: all
-	$(MAKE) -C . install
 
 # Install-local target (for CI compatibility)
 install-local: all
