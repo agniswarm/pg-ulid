@@ -1,14 +1,16 @@
 # Makefile for ulid extension (C implementation) - cross-platform (Linux/macOS)
+
 EXTENSION = ulid
 VERSION ?= 0.1.1
 DATA = $(firstword $(wildcard sql/$(EXTENSION)--*.sql))
 
-# Module / object definitions for PGXS
+# PGXS module / object definitions
 MODULES = $(EXTENSION)
-OBJS = src/ulid.o
+OBJS = ulid.o
 PG_CONFIG ?= pg_config
 
-# Quick diagnostics: ensure pg_config exists and is usable before invoking PGXS
+# --- Safety checks for pg_config / pgxs ---
+
 PG_CONFIG_PATH := $(shell which $(PG_CONFIG) 2>/dev/null || true)
 ifeq ($(PG_CONFIG_PATH),)
 $(error "pg_config not found in PATH. Ensure Postgres dev files are installed and pg_config is on PATH")
@@ -19,28 +21,30 @@ ifeq ($(PGXS),)
 $(error "pg_config found but --pgxs did not return a value. Ensure Postgres dev files (pgxs) are available.")
 endif
 
+# --- Compiler/linker flags ---
+
 # Avoid LTO to prevent macOS clang/LLVM bitcode issues
 PG_CPPFLAGS += -fno-lto -fno-fat-lto-objects
 PG_CFLAGS   += -fno-lto -fno-fat-lto-objects
 PG_LDFLAGS  += -fno-lto -fno-fat-lto-objects
 
-# Let PGXS handle suffixes and platform differences
+# --- Include PGXS makefile generator ---
+# This provides targets: all, install, installcheck, clean, etc.
 include $(PGXS)
 
-# Explicit compile rule for clarity (PGXS would also provide one)
-src/ulid.o: src/ulid.c
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
+# --- Explicit compile rule ---
+# OBJS is "ulid.o", so we tell make how to build it from src/ulid.c
+ulid.o: src/ulid.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
-# Default target is provided by PGXS via modules, but keep explicit alias
-all: $(MODULES).so
-.PHONY: all
+# --- Extra targets ---
 
-# Install a helper binary if you add one (no-op by default)
+# Install a helper binary if you ever add one (no-op by default)
 install-binary:
 	@echo "install-binary: no helper binary to install by default (add commands if needed)"
 
 # install-local: write substituted SQL/control to $(DESTDIR)$(datadir)/extension
-# Useful for CI where we want to write SQL directly to Postgres sharedir
+# Useful for CI where we want to copy SQL directly into Postgres sharedir
 install-local: all
 	@echo "install-local: installing SQL/control to $(DESTDIR)$(datadir)/extension"
 	@if [ -z "$(DATA)" ]; then \
