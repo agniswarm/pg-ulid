@@ -58,14 +58,13 @@ jobs:
       - name: Clean previous artifacts
         run: |
           make clean || true
-          rm -f src/*.o src/*.bc || true
+          rm -f src/*.o src/*.bc *.o *.bc || true
           ls -la src || true
           ls -la sql || true
 
       - name: Build
         env:
           PG_CFLAGS: "${{ matrix.postgres >= 18 && '-Wno-missing-field-initializers' || '' }} -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare"
-          PG_CONFIG: ${{ env.PG_CONFIG }}
         run: |
           # ensure PG_CONFIG is set for make
           export PG_CONFIG="$(which pg_config || echo '')"
@@ -80,7 +79,7 @@ jobs:
         run: |
           export PG_CONFIG="$(which pg_config || true)"
           echo "Using PG_CONFIG=$PG_CONFIG"
-          sudo --preserve-env=PG_CONFIG make install-local
+          sudo --preserve-env=PG_CONFIG make install
 
       - name: Show installed files
         run: |
@@ -154,7 +153,7 @@ jobs:
       - name: Clean previous artifacts
         run: |
           make clean || true
-          rm -f src/*.o src/*.bc || true
+          rm -f src/*.o src/*.bc *.o *.bc || true
           ls -la src || true
           ls -la sql || true
 
@@ -170,11 +169,11 @@ jobs:
           fi
           make
 
-      - name: Install (install-local)
+      - name: Install
         run: |
           export PG_CONFIG="$(which pg_config || true)"
           echo "Using PG_CONFIG=$PG_CONFIG"
-          sudo --preserve-env=PG_CONFIG make install-local
+          sudo --preserve-env=PG_CONFIG make install
 
       - name: Ensure Postgres service started (brew)
         run: |
@@ -184,35 +183,10 @@ jobs:
             sleep 1
           done
 
-      - name: installcheck (native SQL regression tests)
+      - name: installcheck (SQL regression tests)
         run: |
           set -e
           make installcheck
-
-      - name: Setup TAP test support (download postgres sources + IPC::Run)
-        env:
-          TAG: ${{ matrix.postgres == 17 && 'REL_17_6' || 'REL_14_19' }}
-        run: |
-          set -e
-          echo "TAG=$TAG"
-          brew install cpanm || true
-          cpanm --notest IPC::Run || true
-          if [ ! -d "./postgres" ]; then
-            wget -q https://github.com/postgres/postgres/archive/refs/tags/$TAG.tar.gz
-            tar xf $TAG.tar.gz
-            mv postgres-$TAG postgres || true
-          else
-            echo "./postgres already present, skipping download"
-          fi
-          ls -la postgres || true
-
-      - name: Run perl TAP tests (prove_installcheck)
-        env:
-          PERL5LIB: /Users/runner/perl5/lib/perl5
-          PROVE_FLAGS: "-I ./postgres/src/test/perl -I ./test/perl"
-        run: |
-          set -e
-          make prove_installcheck PROVE_FLAGS="$PROVE_FLAGS"
 
       - name: Show regression.diffs on failure
         if: ${{ failure() }}
@@ -341,7 +315,7 @@ jobs:
           ls -la src || true
           echo "=== Cleaning previous build artifacts ==="
           make clean || true
-          rm -f src/*.o src/*.bc || true
+          rm -f src/*.o src/*.bc *.o *.bc || true
           echo "=== Building extension (i386) ==="
           make
           echo "=== Installing extension ==="

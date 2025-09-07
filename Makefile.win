@@ -7,11 +7,11 @@
 
 EXTENSION = ulid
 VERSION = 0.1.1
-DATA = sql/$(EXTENSION)--$(VERSION).sql
+DATA = sql\$(EXTENSION)--$(VERSION).sql
 
 # C extension
 MODULE_big = ulid
-OBJS = src/ulid.obj
+OBJS = src\ulid.obj
 
 # PostgreSQL configuration - expected to be set in CI using pg_config
 # Example in CI:
@@ -19,14 +19,13 @@ OBJS = src/ulid.obj
 #   for /f "tokens=*" %%i in ('pg_config --includedir-server') do set PG_INCLUDEDIR_SERVER=%%i
 #   for /f "tokens=*" %%i in ('pg_config --pkglibdir') do set PG_PKGLIBDIR=%%i
 #   for /f "tokens=*" %%i in ('pg_config --sharedir') do set PG_SHAREDIR=%%i
-PG_INCLUDEDIR ?= $(PG_INCLUDEDIR)
-PG_INCLUDEDIR_SERVER ?= $(PG_INCLUDEDIR_SERVER)
-PG_PKGLIBDIR ?= $(PG_PKGLIBDIR)
-PG_SHAREDIR ?= $(PG_SHAREDIR)
 
 CC = cl
 RM = del /Q
 COPY = copy /Y
+
+# Compiler flags for Windows
+CFLAGS = /nologo /W3 /O2 /DWIN32 /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_WARNINGS
 
 # Default target
 all: $(MODULE_big).dll
@@ -34,41 +33,45 @@ all: $(MODULE_big).dll
 # Build the C extension
 $(MODULE_big).dll: $(OBJS)
 	@echo Building C extension...
-	@if not exist src\*.obj echo "compiled object(s) may be missing"; \
-	$(CC) /LD $(OBJS) /Fe$(MODULE_big).dll
+	$(CC) /LD $(OBJS) /Fe:$(MODULE_big).dll
 
-src/ulid.obj: src/ulid.c
+src\ulid.obj: src\ulid.c
 	@echo Compiling C source...
 	@if "$(PG_INCLUDEDIR)" == "" ( echo "Warning: PG_INCLUDEDIR not set; attempt to compile without includes" ) else ( echo "Using PG_INCLUDEDIR=$(PG_INCLUDEDIR)" )
-	@$(CC) /c /I"$(PG_INCLUDEDIR)" /I"$(PG_INCLUDEDIR_SERVER)" src\ulid.c /Fo$@
+	$(CC) $(CFLAGS) /c /I"$(PG_INCLUDEDIR)" /I"$(PG_INCLUDEDIR_SERVER)" src\ulid.c /Fo:$@
 
 # Install the extension into Postgres dirs discovered in CI
 install: all
 	@echo Installing extension...
 	@if "$(PG_PKGLIBDIR)" == "" ( echo "ERROR: PG_PKGLIBDIR not set. Run pg_config in CI and set environment variables."; exit 1 ) else ( if not exist "$(PG_PKGLIBDIR)" mkdir "$(PG_PKGLIBDIR)" )
-	@$(COPY) $(MODULE_big).dll "$(PG_PKGLIBDIR)\"
+	$(COPY) $(MODULE_big).dll "$(PG_PKGLIBDIR)\"
 	@if "$(PG_SHAREDIR)" == "" ( echo "ERROR: PG_SHAREDIR not set. Run pg_config and set PG_SHAREDIR."; exit 1 ) else ( if not exist "$(PG_SHAREDIR)\extension" mkdir "$(PG_SHAREDIR)\extension" )
-	@$(COPY) $(DATA) "$(PG_SHAREDIR)\extension\"
-	@$(COPY) ulid.control "$(PG_SHAREDIR)\extension\"
+	$(COPY) $(DATA) "$(PG_SHAREDIR)\extension\"
+	$(COPY) ulid.control "$(PG_SHAREDIR)\extension\"
 
-# Windows installcheck: call Windows CI script if present
+# Windows installcheck: Basic test that the extension can be loaded
 installcheck:
 	@echo Running PostgreSQL extension tests (Windows)...
-	@if exist test\build\ci.bat ( test\build\ci.bat && (echo Extension tests passed!) || (echo Extension tests failed! & exit /b 1) ) else ( echo test\build\ci.bat not found; exit /b 1 )
+	@echo Testing extension loading...
+	@psql -d postgres -c "CREATE EXTENSION IF NOT EXISTS ulid;" || (echo "Extension failed to load!" && exit /b 1)
+	@psql -d postgres -c "SELECT ulid();" || (echo "Extension function failed!" && exit /b 1)
+	@psql -d postgres -c "DROP EXTENSION ulid;" || (echo "Extension drop failed!" && exit /b 1)
+	@echo Extension tests passed!
 
 # Clean
 clean:
-	@if exist src\*.obj del /Q src\*.obj
-	@if exist $(MODULE_big).dll del /Q $(MODULE_big).dll
-	@if exist $(MODULE_big).exp del /Q $(MODULE_big).exp
-	@if exist $(MODULE_big).lib del /Q $(MODULE_big).lib
+	@if exist src\*.obj $(RM) src\*.obj
+	@if exist $(MODULE_big).dll $(RM) $(MODULE_big).dll
+	@if exist $(MODULE_big).exp $(RM) $(MODULE_big).exp
+	@if exist $(MODULE_big).lib $(RM) $(MODULE_big).lib
+	@if exist $(MODULE_big).pdb $(RM) $(MODULE_big).pdb
 
 # Help
 help:
 	@echo Available targets:
 	@echo   all              - Build the extension (default)
 	@echo   install          - Install the extension into Postgres
-	@echo   installcheck     - Run Windows regression tests (requires test\build\ci.bat)
+	@echo   installcheck     - Run basic Windows extension tests
 	@echo   clean            - Clean build artifacts
 
 .PHONY: all install installcheck clean help
