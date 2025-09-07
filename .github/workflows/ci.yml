@@ -67,34 +67,102 @@ jobs:
       - if: ${{ failure() }}
         run: cat regression.diffs
   windows:
+    name: Windows (Postgres ${{ matrix.postgres }})
     runs-on: ${{ matrix.os }}
-    if: ${{ !startsWith(github.ref_name, 'mac') }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Test latest supported versions on Windows
           - postgres: 17
             os: windows-2025
           - postgres: 16
             os: windows-2025
           - postgres: 14
             os: windows-2022
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: ankane/setup-postgres@v1
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup PostgreSQL
+        uses: ankane/setup-postgres@v1
         with:
           postgres-version: ${{ matrix.postgres }}
-      - run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" && ^
-          nmake /NOLOGO /F Makefile.win && ^
-          nmake /NOLOGO /F Makefile.win install && ^
-          nmake /NOLOGO /F Makefile.win installcheck ${{ matrix.postgres != 17 && 'PG_REGRESS=$(PGROOT)\bin\pg_regress' || '' }} && ^
-          nmake /NOLOGO /F Makefile.win clean && ^
-          nmake /NOLOGO /F Makefile.win uninstall
+
+      - name: Show basic environment & Postgres info
         shell: cmd
-      - if: ${{ failure() }}
-        run: cat regression.diffs
+        run: |
+          echo ==== Environment ====
+          ver
+          echo ==== PATH snippet ====
+          echo %PATH:~0,200%
+          echo ==== PostgreSQL location guess ====
+          REM The ankane/setup-postgres action installs under the conventional Program Files path.
+          REM If your runner uses a different install location, update PGROOT below.
+          echo "Matrix postgres = ${{ matrix.postgres }}"
+          echo.
+
+      - name: Build, install and run tests (nmake)
+        shell: cmd
+        env:
+          REM: "Set PGROOT to the conventional install location. Change if your runner installs Postgres elsewhere."
+        run: |
+          REM --- Set PGROOT to the standard installer location used by the setup action ---
+          set "PGROOT=C:\Program Files\PostgreSQL\%{{
+            matrix.postgres
+          }}" 
+          REM The above expansion syntax with %{{ matrix.postgres }} inside cmd string is not valid.
+          REM The next command sets PGROOT using the Actions expression directly for cmd context:
+          set "PGROOT=C:\Program Files\PostgreSQL\${{ matrix.postgres }}"
+          echo Using PGROOT=%PGROOT%
+
+          REM Ensure the expected directories exist (helps debugging)
+          if exist "%PGROOT%\bin\psql" (
+            echo Found psql at %PGROOT%\bin\psql
+          ) else (
+            echo WARNING: psql not found at %PGROOT%\bin\psql - you may need to adjust PGROOT
+          )
+
+          REM --- Load Visual Studio (developer prompt) once ---
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" || (echo "vcvars64 failed" & exit /b 1)
+
+          REM --- Run nmake build sequence with early-exit on failure and messages ---
+          echo ----- nmake build -----
+          nmake /NOLOGO /F Makefile.win || (echo "nmake build failed" & exit /b 1)
+
+          echo ----- nmake install -----
+          nmake /NOLOGO /F Makefile.win install || (echo "nmake install failed" & exit /b 1)
+
+          echo ----- nmake installcheck -----
+          REM Makefile.win should implement installcheck to run test\build\ci.bat (per your request).
+          nmake /NOLOGO /F Makefile.win installcheck || (echo "nmake installcheck failed - see regression output" & type regression.diffs || true & exit /b 1)
+
+          echo ----- nmake clean -----
+          nmake /NOLOGO /F Makefile.win clean || (echo "nmake clean failed" & exit /b 1)
+
+          echo ----- nmake uninstall -----
+          nmake /NOLOGO /F Makefile.win uninstall || (echo "nmake uninstall failed" & exit /b 1)
+
+      - name: "On failure: show regression.diffs (if present)"
+        if: failure()
+        shell: cmd
+        run: |
+          if exist regression.diffs (
+            echo ===== regression.diffs =====
+            type regression.diffs
+          ) else (
+            echo "No regression.diffs file found"
+          )
+
+      - name: Upload test artifacts (optional)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-logs
+          path: |
+            regression.diffs
+            regression.out
+            results
   i386:
     if: ${{ !startsWith(github.ref_name, 'mac') && !startsWith(github.ref_name, 'windows') }}
     runs-on: ubuntu-latest

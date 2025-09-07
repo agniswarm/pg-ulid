@@ -1,75 +1,95 @@
-@echo off
-REM Standalone PostgreSQL Extension Test Script for Windows
-REM This can be run without the Makefile and PostgreSQL build system
+#
+# Makefile.win - nmake (MSVC) build for the ulid extension
+#
+# Usage (Developer Command Prompt):
+#   set PGROOT=C:\Program Files\PostgreSQL\17
+#   nmake /F Makefile.win
+#   nmake /F Makefile.win install
+#   nmake /F Makefile.win installcheck
+#   nmake /F Makefile.win clean
+#
 
-echo Running PostgreSQL extension tests...
+# ---------- Preconditions ----------
+!IF "$(PGROOT)" == ""
+!ERROR PGROOT environment variable is not set. Set PGROOT to your Postgres installation root.
+!ENDIF
 
-REM Check if PostgreSQL is running
-pg_isready >nul 2>&1
-if errorlevel 1 (
-    echo PostgreSQL is not running. This test requires a running PostgreSQL instance.
-    echo In CI, PostgreSQL should be started by the CI environment.
-    echo Locally, start PostgreSQL with: net start postgresql
-    exit /b 1
-)
+BINDIR    = $(PGROOT)\bin
+INCLUDEDIR = $(PGROOT)\include
+INCLUDEDIR_SERVER = $(PGROOT)\include\server
+LIBDIR    = $(PGROOT)\lib
+SHAREDIR  = $(PGROOT)\share
+PKGLIBDIR = $(LIBDIR)
 
-REM Use the default postgres database
-set PGDATABASE=postgres
+CC        = cl
+LINKER    = link
 
-REM Test basic extension functionality
-echo Creating extension...
-psql -c "CREATE EXTENSION IF NOT EXISTS ulid;"
-if errorlevel 1 (
-    echo ERROR: Failed to create extension. Make sure it's properly installed.
-    echo Check that the extension files are in the correct location:
-    echo   - /usr/share/postgresql/*/extension/ulid.control
-    echo   - /usr/share/postgresql/*/extension/ulid--1.0.0.sql
-    exit /b 1
-)
+EXTENSION = ulid
+EXTVERSION = 0.1.1
 
-echo Testing ulid() function...
-psql -c "SELECT ulid();"
-if errorlevel 1 (
-    echo ERROR: ulid() function test failed
-    exit /b 1
-)
+SRCDIR    = src
+OBJDIR    = src
+SRC       = $(SRCDIR)\ulid.c
+OBJ       = $(OBJDIR)\ulid.obj
+SHLIB     = $(EXTENSION).dll
+LIBS      = "$(LIBDIR)\postgres.lib"
 
-echo Testing ulid_random() function...
-psql -c "SELECT ulid_random();"
-if errorlevel 1 (
-    echo ERROR: ulid_random() function test failed
-    exit /b 1
-)
+# Compiler flags - tuned for release builds (adjust as needed)
+CFLAGS    = /nologo /MD /O2 /I"$(INCLUDEDIR_SERVER)\port\win32_msvc" /I"$(INCLUDEDIR_SERVER)\port\win32" /I"$(INCLUDEDIR_SERVER)" /I"$(INCLUDEDIR)"
 
-echo Testing ulid_time() function...
-psql -c "SELECT ulid_time((extract(epoch from now()) * 1000)::BIGINT);"
-if errorlevel 1 (
-    echo ERROR: ulid_time() function test failed
-    exit /b 1
-)
+# Link flags
+LFLAGS    = /nologo
 
-echo Testing ulid_batch() function...
-psql -c "SELECT array_length(ulid_batch(5), 1);"
-if errorlevel 1 (
-    echo ERROR: ulid_batch() function test failed
-    exit /b 1
-)
+# ---------- Default target ----------
+all: $(SHLIB)
 
-echo Testing ulid_random_batch() function...
-psql -c "SELECT array_length(ulid_random_batch(3), 1);"
-if errorlevel 1 (
-    echo ERROR: ulid_random_batch() function test failed
-    exit /b 1
-)
+# Compile source to object
+$(OBJ): $(SRC)
+	@echo Compiling $(SRC) -> $(OBJ)
+	$(CC) $(CFLAGS) /c $(SRC) /Fo$(OBJ)
 
-echo Testing ulid_parse() function...
-psql -c "SELECT * FROM ulid_parse('01K4FQ7QN4ZSW0SG5XACGM2HB4');"
-if errorlevel 1 (
-    echo ERROR: ulid_parse() function test failed
-    exit /b 1
-)
+# Link object into DLL
+$(SHLIB): $(OBJ)
+	@echo Linking $(SHLIB)
+	$(LINKER) $(LFLAGS) /DLL /OUT:$(SHLIB) $(OBJ) $(LIBS)
 
-echo Cleaning up...
-psql -c "DROP EXTENSION IF EXISTS ulid;"
+# Install: copy DLL and SQL/control into PG lib and share dirs
+install: all
+	@echo Installing $(SHLIB) to $(PKGLIBDIR)
+	copy /Y "$(SHLIB)" "$(PKGLIBDIR)" || (echo Failed to copy DLL & exit /b 1)
+	@echo Installing extension control and SQL files to $(SHAREDIR)\extension
+	if not exist "$(SHAREDIR)\extension" ( mkdir "$(SHAREDIR)\extension" )
+	copy /Y "$(EXTENSION).control" "$(SHAREDIR)\extension" || (echo Failed to copy control file & exit /b 1)
+	copy /Y sql\$(EXTENSION)--*.sql "$(SHAREDIR)\extension" || (echo Failed to copy SQL file(s) & exit /b 1)
+	@echo Install complete.
 
-echo All tests passed successfully!
+#
+# installcheck: run the repository CI batch script (test\build\ci.bat)
+# - This is intentionally a wrapper that:
+#   1) tells you what's going to run,
+#   2) verifies the CI script exists,
+#   3) executes it from the repo root.
+#
+installcheck:
+	@echo Running installcheck: invoking test\build\ci.bat
+	if not exist "test\build\ci.bat" ( \
+		echo "ERROR: test\\build\\ci.bat not found in repository root" && exit /b 1 \
+	)
+	@echo "Executing test\\build\\ci.bat -- this may run postgres service and full test suite"
+	call test\build\ci.bat
+
+# Clean build artifacts
+clean:
+	-@if exist $(OBJ) del /F /Q $(OBJ)
+	-@if exist $(SHLIB) del /F /Q $(SHLIB)
+	-@if exist $(EXTENSION).lib del /F /Q $(EXTENSION).lib
+	-@if exist $(EXTENSION).exp del /F /Q $(EXTENSION).exp
+	@echo Cleaned.
+
+# Uninstall: remove installed files (best-effort; needs appropriate permissions)
+uninstall:
+	-@if exist "$(PKGLIBDIR)\$(SHLIB)" del /F /Q "$(PKGLIBDIR)\$(SHLIB)"
+	-@if exist "$(SHAREDIR)\extension\$(EXTENSION).control" del /F /Q "$(SHAREDIR)\extension\$(EXTENSION).control"
+	-@for %%f in ("$(SHAREDIR)\extension\$(EXTENSION)--*.sql") do ( if exist "%%~f" del /F /Q "%%~f" )
+
+.PHONY: all install installcheck clean uninstall
