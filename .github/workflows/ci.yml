@@ -43,7 +43,6 @@ jobs:
           version: ${{ matrix.pg }}
           install-contrib: 'true'
       
-          
       - name: Build and test extension
         uses: agniswarm/pg-ext-actions/build-check@master
         with:
