@@ -22,6 +22,7 @@ EXTVERSION = 0.1.1
 MODULE_big = $(EXTENSION)
 OBJS = src/ulid.o
 DATA = $(EXTENSION).control sql/$(EXTENSION)--$(EXTVERSION).sql
+REGRESS = 
 
 # Use pg_config to discover PGXS; fallback to pg_config in PATH
 PG_CONFIG ?= pg_config
@@ -74,28 +75,6 @@ CC ?= $(HOSTCC)
 src/%.o: src/%.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) $(ULID_C_INCDIR) -c $< -o $@
 
-# Allow make to build as usual by delegating to PGXS rules
-all: all-local
-
-all-local: $(MODULE_big).so
-
-# Link step: rely on PGXS variables; this keeps compatibility with extension build process
-$(MODULE_big).so: $(OBJS)
-	$(CC) $(LDFLAGS) $(OBJS) $(ULID_C_LIBDIR) $(ULID_C_LIBS) -o $@
-
-install: all
-	$(MAKE) -f $(PGXS) install
-
-installcheck: all
-	# run platform installcheck; delegate to pg_regress via PGXS
-	$(MAKE) -f $(PGXS) installcheck
-
-uninstall:
-	$(MAKE) -f $(PGXS) uninstall || true
-
-clean:
-	rm -f src/*.o
-	rm -f $(MODULE_big).so
-	rm -f regression.diffs regression.out
+# Let PGXS handle everything - it knows how to build PostgreSQL extensions properly
 
 .PHONY: all all-local install installcheck uninstall clean

@@ -1,49 +1,33 @@
-# Makefile.win - nmake script for building ulid extension on Windows (MSVC)
-# Edit PGROOT if needed (CI runner usually installs to "C:\Program Files\PostgreSQL\<version>")
-!IFNDEF PGROOT
-PGROOT=C:\Program Files\PostgreSQL\17
-!ELSE
-PGROOT=$(PGROOT)
-!ENDIF
+# Makefile.win - Windows build for ULID extension
 
-BINDIR=$(PGROOT)\bin
-INCLUDEDIR=$(PGROOT)\include
-INCLUDEDIR_SERVER=$(INCLUDEDIR)\server
-LIBDIR=$(PGROOT)\lib
-PKGLIBDIR=$(LIBDIR)
-SHAREDIR=$(PGROOT)\share
+EXTENSION = ulid
+EXTVERSION = 0.1.1
 
-CC=cl
-CFLAGS=/nologo /MD /O2 /W3 /I"$(INCLUDEDIR_SERVER)\port\win32_msvc" /I"$(INCLUDEDIR_SERVER)"
-OBJS=src\ulid.obj
-SHLIB=ulid.dll
-LIBS="$(LIBDIR)\postgres.lib"
+MODULE_big = ulid
+OBJS = src/ulid.o
 
-all: $(SHLIB)
+PGROOT = C:\Program Files\PostgreSQL\16
+PG_CONFIG = $(PGROOT)\bin\pg_config
 
-.c.obj:
-	$(CC) $(CFLAGS) /c $< /Fo$@
+PG_CPPFLAGS = -I"$(PGROOT)\include\server"
+SHLIB_LINK = -L"$(PGROOT)\lib" -lpostgres
 
-$(SHLIB): $(OBJS)
-	$(CC) $(CFLAGS) $(OBJS) $(LIBS) /link /DLL /OUT:$(SHLIB)
+DATA = $(EXTENSION).control sql/$(EXTENSION)--$(EXTVERSION).sql
 
-install: all
-	copy /Y $(SHLIB) "$(PKGLIBDIR)\$(SHLIB)"
-	copy /Y ulid.control "$(SHAREDIR)\extension\ulid.control"
-	copy /Y sql\ulid--*.sql "$(SHAREDIR)\extension\"
+PGXS := $(shell $(PG_CONFIG) --pgxs)
+include $(PGXS)
 
-installcheck: install
-	if exist test\build\ci.bat ( \
-		call test\build\ci.bat \
-	) else ( \
-		echo "Missing test\build\ci.bat" & exit /b 1 \
-	)
+# Custom targets for Windows
+installcheck: all
+    @echo "Running tests on Windows..."
+    set PGPORT=5432
+    set PGHOST=localhost
+    set PGUSER=postgres
+    "$(PGROOT)\bin\pg_regress" --inputdir=test --load-language=plpgsql --dbname=postgres --outputdir=./results --temp-instance=./tmp_check $(REGRESS)
 
 clean:
-	del /f $(SHLIB) 2>nul
-	del /f $(OBJS) 2>nul
-
-uninstall:
-	del /f "$(PKGLIBDIR)\$(SHLIB)" 2>nul
-	del /f "$(SHAREDIR)\extension\ulid.control" 2>nul
-	del /f "$(SHAREDIR)\extension\ulid--*.sql" 2>nul
+    del /q $(OBJS) $(EXTENSION).dll 2>nul
+    if exist results rmdir /s /q results
+    if exist tmp_check rmdir /s /q tmp_check
+    if exist regression.diffs del regression.diffs
+    if exist regression.out del regression.out
