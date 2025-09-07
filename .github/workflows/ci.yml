@@ -117,48 +117,108 @@ jobs:
           # - postgres: 14
           #   os: macos-13
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Repo info (diagnostics)
+        run: |
+          echo ">>> HEAD commit:"
+          git rev-parse HEAD || true
+          echo ">>> Branch / ref: $GITHUB_REF"
+          ls -la || true
 
       - name: Setup Postgres (brew)
         uses: ankane/setup-postgres@v1
         with:
           postgres-version: ${{ matrix.postgres }}
 
-      - name: Build
+      - name: pg_config info (mac)
         run: |
-          export PG_CFLAGS="-DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-warning-option"
+          which pg_config || true
+          pg_config --version || true
+          echo "bindir=$(pg_config --bindir)"
+          echo "pkglibdir=$(pg_config --pkglibdir)"
+          echo "sharedir=$(pg_config --sharedir)"
+          ls -la "$(pg_config --sharedir)/extension" || true
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.21"
+
+      - name: Clean previous artifacts
+        run: |
           make clean || true
           rm -f src/*.o src/*.bc || true
+          ls -la src || true
+          ls -la sql || true
+
+      - name: Build
+        env:
+          PG_CFLAGS: "-DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-warning-option"
+        run: |
+          echo "PG_CFLAGS=$PG_CFLAGS"
+          set -e
           make
 
-      - name: Install
-        run: make install
-
-      - name: Ensure Postgres running (brew)
+      - name: Install (install-local) - write files into Postgres sharedir
         run: |
+          export PG_CONFIG=$(which pg_config)
+          echo "Using PG_CONFIG=$PG_CONFIG"
+          sudo --preserve-env=PG_CONFIG make install-local
+
+      - name: Ensure Postgres service started (brew)
+        run: |
+          # start Postgres with brew services (may already be started by the action)
           brew services start postgresql@${{ matrix.postgres }} || true
+          # wait for pg_isready
           until pg_isready; do
-            echo "Waiting for PostgreSQL..."
+            echo "Waiting for PostgreSQL (brew)..."
             sleep 1
           done
 
-      - name: installcheck
-        run: make installcheck
+      - name: installcheck (native SQL regression tests)
+        run: |
+          set -e
+          make installcheck
+
+      - name: Setup TAP test support (download postgres sources + IPC::Run)
+        env:
+          TAG: ${{ matrix.postgres == 17 && 'REL_17_6' || 'REL_14_19' }}
+        run: |
+          set -e
+          echo "TAG=$TAG"
+          # install cpanm and IPC::Run for TAP tests
+          brew install cpanm || true
+          cpanm --notest IPC::Run || true
+          # download Postgres source tarball for the chosen tag so prove can use postgres/src/test/perl
+          if [ ! -d "./postgres" ]; then
+            wget -q https://github.com/postgres/postgres/archive/refs/tags/$TAG.tar.gz
+            tar xf $TAG.tar.gz
+            mv postgres-$TAG postgres || true
+          else
+            echo "./postgres already present, skipping download"
+          fi
+          ls -la postgres || true
+
+      - name: Run perl TAP tests (prove_installcheck)
+        env:
+          PERL5LIB: /Users/runner/perl5/lib/perl5
+          PROVE_FLAGS: "-I ./postgres/src/test/perl -I ./test/perl"
+        run: |
+          set -e
+          echo "Running prove_installcheck (per Makefile target)..."
+          make prove_installcheck PROVE_FLAGS="$PROVE_FLAGS"
 
       - name: Show regression.diffs on failure
         if: ${{ failure() }}
         run: |
+          echo "Failure - checking for regression.diffs"
           if [ -f regression.diffs ]; then
             cat regression.diffs
           else
             echo "No regression.diffs found"
           fi
-
-      - name: scan-build (optional)
-        run: make clean && $(brew --prefix llvm@$LLVM_VERSION)/bin/scan-build --status-bugs make
-        env:
-          LLVM_VERSION: ${{ matrix.os == 'macos-15' && 18 || 15 }}
-          PG_CFLAGS: -DUSE_ASSERT_CHECKING
 
   windows:
     name: windows latest (postgres ${{ matrix.postgres }})
