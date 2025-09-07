@@ -66,6 +66,7 @@ jobs:
       - run: make installcheck
       - if: ${{ failure() }}
         run: cat regression.diffs
+  
   windows:
     name: Windows (Postgres ${{ matrix.postgres }})
     runs-on: ${{ matrix.os }}
@@ -91,42 +92,59 @@ jobs:
 
       - name: Show basic environment & Postgres info
         shell: cmd
+        env:
+          MATRIX_POSTGRES: ${{ matrix.postgres }}
         run: |
           echo ==== Environment ====
           ver
           echo ==== PATH snippet ====
           echo %PATH:~0,200%
-          echo ==== PostgreSQL location guess ====
-          REM The ankane/setup-postgres action installs under the conventional Program Files path.
-          REM If your runner uses a different install location, update PGROOT below.
-          echo "Matrix postgres = ${{ matrix.postgres }}"
+          echo ==== Matrix postgres (env) ====
+          echo %MATRIX_POSTGRES%
           echo.
 
       - name: Build, install and run tests (nmake)
         shell: cmd
         env:
-          REM: "Set PGROOT to the conventional install location. Change if your runner installs Postgres elsewhere."
+          MATRIX_POSTGRES: ${{ matrix.postgres }}
+          # Optionally override PGROOT in the workflow dispatch or repo secrets if your runner installs Postgres elsewhere.
+          # If unspecified, we build PGROOT from the conventional installer location below.
         run: |
-          REM --- Set PGROOT to the standard installer location used by the setup action ---
-          set "PGROOT=C:\Program Files\PostgreSQL\%{{
-            matrix.postgres
-          }}" 
-          REM The above expansion syntax with %{{ matrix.postgres }} inside cmd string is not valid.
-          REM The next command sets PGROOT using the Actions expression directly for cmd context:
-          set "PGROOT=C:\Program Files\PostgreSQL\${{ matrix.postgres }}"
+          REM --- Compute PGROOT from matrix value (conventional Postgres installer location) ---
+          set "MATRIX_POSTGRES=%MATRIX_POSTGRES%"
+          set "PGROOT=C:\Program Files\PostgreSQL\%MATRIX_POSTGRES%"
           echo Using PGROOT=%PGROOT%
 
-          REM Ensure the expected directories exist (helps debugging)
+          REM --- Debug: show a few files that help diagnose include/lib availability ---
           if exist "%PGROOT%\bin\psql" (
             echo Found psql at %PGROOT%\bin\psql
           ) else (
             echo WARNING: psql not found at %PGROOT%\bin\psql - you may need to adjust PGROOT
           )
 
-          REM --- Load Visual Studio (developer prompt) once ---
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" || (echo "vcvars64 failed" & exit /b 1)
+          if exist "%PGROOT%\include\server\postgres.h" (
+            echo Found server headers at %PGROOT%\include\server
+          ) else (
+            echo WARNING: Postgres server headers not found at %PGROOT%\include\server
+          )
 
-          REM --- Run nmake build sequence with early-exit on failure and messages ---
+          if exist "%PGROOT%\lib\postgres.lib" (
+            echo Found postgres.lib at %PGROOT%\lib
+          ) else (
+            echo WARNING: postgres.lib not found at %PGROOT%\lib
+          )
+
+          REM --- Ensure Visual Studio developer environment is loaded (adjust path if different) ---
+          if exist "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" (
+            call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          ) else if exist "C:\Program Files (x86)\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" (
+            call "C:\Program Files (x86)\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          ) else (
+            echo "WARNING: vcvars64.bat not found at expected locations. Please ensure Visual Studio is installed or adjust the path."
+            exit /b 1
+          )
+
+          REM --- Run the build sequence (nmake) and fail early on any step ---
           echo ----- nmake build -----
           nmake /NOLOGO /F Makefile.win || (echo "nmake build failed" & exit /b 1)
 
@@ -134,8 +152,12 @@ jobs:
           nmake /NOLOGO /F Makefile.win install || (echo "nmake install failed" & exit /b 1)
 
           echo ----- nmake installcheck -----
-          REM Makefile.win should implement installcheck to run test\build\ci.bat (per your request).
-          nmake /NOLOGO /F Makefile.win installcheck || (echo "nmake installcheck failed - see regression output" & type regression.diffs || true & exit /b 1)
+          REM Makefile.win should implement installcheck to run test\build\ci.bat or pg_regress as appropriate.
+          nmake /NOLOGO /F Makefile.win installcheck || (
+            echo "nmake installcheck failed - attempting to show regression.diffs"
+            if exist regression.diffs ( type regression.diffs ) else ( echo "no regression.diffs found" )
+            exit /b 1
+          )
 
           echo ----- nmake clean -----
           nmake /NOLOGO /F Makefile.win clean || (echo "nmake clean failed" & exit /b 1)

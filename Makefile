@@ -21,6 +21,7 @@ EXTVERSION = 0.1.1
 
 MODULE_big = $(EXTENSION)
 OBJS = src/ulid.o
+DATA = $(EXTENSION).control sql/$(EXTENSION)--$(EXTVERSION).sql
 
 # Use pg_config to discover PGXS; fallback to pg_config in PATH
 PG_CONFIG ?= pg_config

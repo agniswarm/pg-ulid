@@ -1,66 +1,49 @@
-#
-# Makefile.win - nmake for MSVC / Windows PostgreSQL extension build
-#
-# Usage from Developer Command Prompt:
-#   set PGROOT="C:\Program Files\PostgreSQL\17"
-#   nmake /NOLOGO /F Makefile.win
-#   nmake /NOLOGO /F Makefile.win install
-#   nmake /NOLOGO /F Makefile.win installcheck
-#   nmake /NOLOGO /F Makefile.win clean
-#   nmake /NOLOGO /F Makefile.win uninstall
-#
-# Edit PGROOT if the installer placed PostgreSQL elsewhere.
-#
+# Makefile.win - nmake script for building ulid extension on Windows (MSVC)
+# Edit PGROOT if needed (CI runner usually installs to "C:\Program Files\PostgreSQL\<version>")
+!IFNDEF PGROOT
+PGROOT=C:\Program Files\PostgreSQL\17
+!ELSE
+PGROOT=$(PGROOT)
+!ENDIF
 
-!if "%PGROOT%" == ""
-!error PGROOT environment variable must be set to your PostgreSQL install root (e.g. C:\Program Files\PostgreSQL\17)
-!endif
+BINDIR=$(PGROOT)\bin
+INCLUDEDIR=$(PGROOT)\include
+INCLUDEDIR_SERVER=$(INCLUDEDIR)\server
+LIBDIR=$(PGROOT)\lib
+PKGLIBDIR=$(LIBDIR)
+SHAREDIR=$(PGROOT)\share
 
-EXTENSION = ulid
-MODULE = ulid
-SRC = src\ulid.c
-OBJ = src\ulid.obj
-SHLIB = $(MODULE).dll
-INCDIR = "$(PGROOT)\include\server"
-INCDIR_PORT = "$(PGROOT)\include\server\port\win32_msvc"
-LIBDIR = "$(PGROOT)\lib"
-PGREGRESS = "$(PGROOT)\lib\pgxs\src\test\regress\pg_regress"
-
-# Compiler flags - adjust as needed
-CFLAGS = /nologo /MD /O2 /W3 /DWIN32 /D_WINDOWS /I$(INCDIR_PORT) /I$(INCDIR)
-LDFLAGS = /nologo /DLL /OUT:$(SHLIB)
-LIBS = "$(LIBDIR)\postgres.lib"
+CC=cl
+CFLAGS=/nologo /MD /O2 /W3 /I"$(INCLUDEDIR_SERVER)\port\win32_msvc" /I"$(INCLUDEDIR_SERVER)"
+OBJS=src\ulid.obj
+SHLIB=ulid.dll
+LIBS="$(LIBDIR)\postgres.lib"
 
 all: $(SHLIB)
 
-$(OBJ): $(SRC)
-	cl $(CFLAGS) /c $(SRC) /Fo$(OBJ)
+.c.obj:
+	$(CC) $(CFLAGS) /c $< /Fo$@
 
-$(SHLIB): $(OBJ)
-	link $(LDFLAGS) $(OBJ) $(LIBS)
+$(SHLIB): $(OBJS)
+	$(CC) $(CFLAGS) $(OBJS) $(LIBS) /link /DLL /OUT:$(SHLIB)
 
 install: all
-	if not exist "$(PGROOT)\lib" (echo PGROOT seems wrong & exit /b 1)
-	copy /Y $(SHLIB) "$(PGROOT)\lib" >nul
-	copy /Y $(EXTENSION).control "$(PGROOT)\share\extension" >nul
-	copy /Y sql\$(EXTENSION)--*.sql "$(PGROOT)\share\extension" >nul
-	@echo Installed $(SHLIB) to $(PGROOT)\lib
+	copy /Y $(SHLIB) "$(PKGLIBDIR)\$(SHLIB)"
+	copy /Y ulid.control "$(SHAREDIR)\extension\ulid.control"
+	copy /Y sql\ulid--*.sql "$(SHAREDIR)\extension\"
 
-# By request run test\build\ci.bat during installcheck (safer than pg_regress on some CI flows)
-installcheck:
+installcheck: install
 	if exist test\build\ci.bat ( \
-		echo Running test\build\ci.bat & call test\build\ci.bat ) else ( \
-		echo test\build\ci.bat not found - falling back to pg_regress & $(PGREGRESS) --bindir="$(PGROOT)\bin" ulid_basic )
-
-uninstall:
-	del /F /Q "$(PGROOT)\lib\$(SHLIB)" >nul 2>&1
-	del /F /Q "$(PGROOT)\share\extension\$(EXTENSION).control" >nul 2>&1
-	del /F /Q "$(PGROOT)\share\extension\$(EXTENSION)--*.sql" >nul 2>&1
-	@echo Uninstalled $(SHLIB) from $(PGROOT)
+		call test\build\ci.bat \
+	) else ( \
+		echo "Missing test\build\ci.bat" & exit /b 1 \
+	)
 
 clean:
-	-del /F /Q $(OBJ) >nul 2>&1
-	-del /F /Q $(SHLIB) >nul 2>&1
-	-del /F /Q regression.diffs regression.out >nul 2>&1
+	del /f $(SHLIB) 2>nul
+	del /f $(OBJS) 2>nul
 
-.PHONY: all install installcheck uninstall clean
+uninstall:
+	del /f "$(PKGLIBDIR)\$(SHLIB)" 2>nul
+	del /f "$(SHAREDIR)\extension\ulid.control" 2>nul
+	del /f "$(SHAREDIR)\extension\ulid--*.sql" 2>nul

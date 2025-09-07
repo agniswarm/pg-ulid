@@ -15,6 +15,7 @@ RUN apt-get update && \
 		make clean && \
 		make OPTFLAGS="" && \
 		make install && \
+		ls -la /usr/share/postgresql/$PG_MAJOR/extension/ulid* && \
 		mkdir -p /usr/share/doc/ulid-extension && \
 		cp README.md /usr/share/doc/ulid-extension/ 2>/dev/null || true && \
 		rm -rf /tmp/ulid-extension && \
