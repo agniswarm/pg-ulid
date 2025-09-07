@@ -1,352 +1,127 @@
 name: build
 on: [push, pull_request]
-
 jobs:
   ubuntu:
-    name: ubuntu (postgres ${{ matrix.postgres }})
     runs-on: ${{ matrix.os }}
+    if: ${{ !startsWith(github.ref_name, 'mac') && !startsWith(github.ref_name, 'windows') }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - postgres: 19
             os: ubuntu-24.04
-          # add additional combos if needed
+          - postgres: 18
+            os: ubuntu-24.04
+          - postgres: 17
+            os: ubuntu-24.04
+          - postgres: 16
+            os: ubuntu-22.04
+          - postgres: 15
+            os: ubuntu-22.04
+          - postgres: 14
+            os: ubuntu-22.04
+          - postgres: 13
+            os: ubuntu-22.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Repo info (diagnostics)
-        run: |
-          echo ">>> HEAD commit:"
-          git rev-parse HEAD || true
-          echo ">>> Branch / ref: $GITHUB_REF"
-          ls -la || true
-
-      - name: Setup Postgres (dev files)
-        uses: ankane/setup-postgres@v1
+      - uses: actions/checkout@v4
+      - uses: ankane/setup-postgres@v1
         with:
           postgres-version: ${{ matrix.postgres }}
           dev-files: true
-
-      - name: Show pg_config and make sure it's on PATH
-        run: |
-          echo "which pg_config:"
-          which pg_config || true
-          echo "pg_config --version"
-          pg_config --version || true
-          echo "PG_CONFIG_PATH=$(which pg_config || echo 'NOT FOUND')"
-
-      - name: Setup Go (for generator if needed)
-        uses: actions/setup-go@v4
-        with:
-          go-version: "1.21"
-
-      - name: Export PG_CONFIG and show pg dirs (diagnostics)
-        run: |
-          export PG_CONFIG="$(which pg_config || true)"
-          echo "PG_CONFIG=$PG_CONFIG"
-          if [ -n "$PG_CONFIG" ]; then
-            echo "pkglibdir=$($PG_CONFIG --pkglibdir)"
-            echo "sharedir=$($PG_CONFIG --sharedir)"
-            ls -la "$($PG_CONFIG --sharedir)/extension" || true
-          else
-            echo "WARNING: pg_config not found in PATH; build may fail"
-          fi
-        shell: bash
-
-      - name: Clean previous artifacts
-        run: |
-          make clean || true
-          rm -f src/*.o src/*.bc *.o *.bc || true
-          ls -la src || true
-          ls -la sql || true
-
-      - name: Build
+      - run: make
         env:
-          PG_CFLAGS: "${{ matrix.postgres >= 18 && '-Wno-missing-field-initializers' || '' }} -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare"
-        run: |
-          # ensure PG_CONFIG is set for make
-          export PG_CONFIG="$(which pg_config || echo '')"
-          echo "Resolved PG_CONFIG=$PG_CONFIG"
-          if [ -z "$PG_CONFIG" ]; then
-            echo "ERROR: pg_config not found — aborting build"
-            exit 2
-          fi
-          make
-
-      - name: Install (install-local)
-        run: |
-          export PG_CONFIG="$(which pg_config || true)"
-          echo "Using PG_CONFIG=$PG_CONFIG"
+          PG_CFLAGS: ${{ matrix.postgres >= 18 && '-Wno-missing-field-initializers' || '' }} -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare
+      - run: |
+          export PG_CONFIG=`which pg_config`
           sudo --preserve-env=PG_CONFIG make install
-
-      - name: Show installed files
-        run: |
-          export PG_CONFIG="$(which pg_config || true)"
-          echo "pkglibdir:"
-          ls -la "$($PG_CONFIG --pkglibdir)" || true
-          echo "sharedir/extension:"
-          ls -la "$($PG_CONFIG --sharedir)/extension" || true
-          echo "ulid--*.sql:"
-          ls -la "$($PG_CONFIG --sharedir)/extension/ulid--*.sql" || true
-
-      - name: Ensure Postgres running
-        run: |
-          sudo service postgresql start || true
-          until pg_isready -q; do
-            echo "Waiting for PostgreSQL..."
-            sleep 1
-          done
-
-      - name: Run installcheck
-        run: make installcheck
-
-      - name: Show regression.diffs on failure
-        if: ${{ failure() }}
-        run: |
-          if [ -f regression.diffs ]; then
-            cat regression.diffs
-          else
-            echo "No regression.diffs found"
-          fi
-
+      - run: make installcheck
+      - if: ${{ failure() }}
+        run: cat regression.diffs
+      - run: |
+          sudo apt-get update
+          sudo apt-get install libipc-run-perl
+      - run: make prove_installcheck
   mac:
-    name: macos (postgres ${{ matrix.postgres }})
     runs-on: ${{ matrix.os }}
+    if: ${{ !startsWith(github.ref_name, 'windows') }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - postgres: 17
             os: macos-15
+          - postgres: 14
+            os: macos-13
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Repo info (diagnostics)
-        run: |
-          echo ">>> HEAD commit:"
-          git rev-parse HEAD || true
-          echo ">>> Branch / ref: $GITHUB_REF"
-          ls -la || true
-
-      - name: Setup Postgres (brew)
-        uses: ankane/setup-postgres@v1
+      - uses: actions/checkout@v4
+      - uses: ankane/setup-postgres@v1
         with:
           postgres-version: ${{ matrix.postgres }}
-
-      - name: Show pg_config (mac)
-        run: |
-          which pg_config || true
-          pg_config --version || true
-          echo "bindir=$(pg_config --bindir || true)"
-          echo "pkglibdir=$(pg_config --pkglibdir || true)"
-          echo "sharedir=$(pg_config --sharedir || true)"
-          ls -la "$(pg_config --sharedir)/extension" || true
-
-
-
-      - name: Clean previous artifacts
-        run: |
-          make clean || true
-          rm -f src/*.o src/*.bc *.o *.bc || true
-          ls -la src || true
-          ls -la sql || true
-
-      - name: Build
+      - run: make
         env:
-          PG_CFLAGS: "-DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-warning-option"
-        run: |
-          export PG_CONFIG="$(which pg_config || true)"
-          echo "PG_CONFIG=$PG_CONFIG"
-          if [ -z "$PG_CONFIG" ]; then
-            echo "ERROR: pg_config not found; aborting"
-            exit 2
-          fi
-          make
-
-      - name: Install
-        run: |
-          export PG_CONFIG="$(which pg_config || true)"
-          echo "Using PG_CONFIG=$PG_CONFIG"
-          sudo --preserve-env=PG_CONFIG make install
-
-      - name: Ensure Postgres service started (brew)
-        run: |
-          brew services start postgresql@${{ matrix.postgres }} || true
-          until pg_isready -q; do
-            echo "Waiting for PostgreSQL (brew)..."
-            sleep 1
-          done
-
-      - name: installcheck (SQL regression tests)
-        run: |
-          set -e
-          make installcheck
-
-      - name: Show regression.diffs on failure
-        if: ${{ failure() }}
-        run: |
-          if [ -f regression.diffs ]; then
-            cat regression.diffs
-          else
-            echo "No regression.diffs found"
-          fi
-
-  # Windows: keep but be cautious — windows runners differ in how pg is installed.
+          PG_CFLAGS: -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-warning-option
+      - run: make install
+      - run: make installcheck
+      - if: ${{ failure() }}
+        run: cat regression.diffs
+      # Homebrew Postgres does not enable TAP tests, so need to download
+      - run: |
+          brew install cpanm
+          cpanm --notest IPC::Run
+          wget -q https://github.com/postgres/postgres/archive/refs/tags/$TAG.tar.gz
+          tar xf $TAG.tar.gz
+          mv postgres-$TAG postgres
+        env:
+          TAG: ${{ matrix.postgres == 17 && 'REL_17_6' || 'REL_14_19' }}
+      - run: make prove_installcheck PROVE_FLAGS="-I ./postgres/src/test/perl -I ./test/perl"
+        env:
+          PERL5LIB: /Users/runner/perl5/lib/perl5
   windows:
-    name: windows (postgres ${{ matrix.postgres }})
     runs-on: ${{ matrix.os }}
+    if: ${{ !startsWith(github.ref_name, 'mac') }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - postgres: 17
+            os: windows-2025
+          - postgres: 14
             os: windows-2022
     steps:
       - uses: actions/checkout@v4
-
-      - name: Repo info (diagnostics)
-        run: |
-          echo ">>> HEAD commit:"
-          git rev-parse HEAD || true
-          echo ">>> Branch / ref: %GITHUB_REF%"
-        shell: cmd
-
-      - name: Setup Postgres (Windows) - try ankane action but fallback note
-        uses: ankane/setup-postgres@v1
+      - uses: ankane/setup-postgres@v1
         with:
           postgres-version: ${{ matrix.postgres }}
-
-      - name: Show pg_config (windows)
-        run: |
-          where pg_config || echo pg_config not found
-          pg_config --version || echo pg_config --version failed
+      - run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" && ^
+          nmake /NOLOGO /F Makefile.win && ^
+          nmake /NOLOGO /F Makefile.win install && ^
+          nmake /NOLOGO /F Makefile.win installcheck ${{ matrix.postgres != 17 && 'PG_REGRESS=$(PGROOT)\bin\pg_regress' || '' }} && ^
+          nmake /NOLOGO /F Makefile.win clean && ^
+          nmake /NOLOGO /F Makefile.win uninstall
         shell: cmd
-
-      - name: Build & install (MSVC)
-        run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-          where cl || echo "cl not found"
-          where nmake || echo "nmake not found"
-          where pg_config || echo "pg_config not found"
-          for /f "tokens=*" %%i in ('pg_config --includedir') do set PG_INCLUDEDIR=%%i
-          for /f "tokens=*" %%i in ('pg_config --includedir-server') do set PG_INCLUDEDIR_SERVER=%%i
-          for /f "tokens=*" %%i in ('pg_config --pkglibdir') do set PG_PKGLIBDIR=%%i
-          for /f "tokens=*" %%i in ('pg_config --sharedir') do set PG_SHAREDIR=%%i
-          nmake /NOLOGO /F Makefile.win clean
-          nmake /NOLOGO /F Makefile.win
-          nmake /NOLOGO /F Makefile.win install
-        shell: cmd
-
-      - name: Ensure Postgres service started
-        run: |
-          net start postgresql-x64-${{ matrix.postgres }} || echo "Service may not need manual start"
-          :wait
-          pg_isready
-          if errorlevel 1 (
-            echo Waiting for PostgreSQL...
-            timeout /t 1 /nobreak >nul
-            goto wait
-          )
-          echo PostgreSQL is ready!
-        shell: cmd
-
-      - name: installcheck
-        run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-          for /f "tokens=*" %%i in ('pg_config --includedir') do set PG_INCLUDEDIR=%%i
-          for /f "tokens=*" %%i in ('pg_config --includedir-server') do set PG_INCLUDEDIR_SERVER=%%i
-          for /f "tokens=*" %%i in ('pg_config --pkglibdir') do set PG_PKGLIBDIR=%%i
-          for /f "tokens=*" %%i in ('pg_config --sharedir') do set PG_SHAREDIR=%%i
-          nmake /NOLOGO /F Makefile.win installcheck
-        shell: cmd
-
-      - name: Clean
-        run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-          for /f "tokens=*" %%i in ('pg_config --includedir') do set PG_INCLUDEDIR=%%i
-          for /f "tokens=*" %%i in ('pg_config --includedir-server') do set PG_INCLUDEDIR_SERVER=%%i
-          for /f "tokens=*" %%i in ('pg_config --pkglibdir') do set PG_PKGLIBDIR=%%i
-          for /f "tokens=*" %%i in ('pg_config --sharedir') do set PG_SHAREDIR=%%i
-          nmake /NOLOGO /F Makefile.win clean
-        shell: cmd
-
-      - name: Show regression.diffs on failure
-        if: ${{ failure() }}
-        run: |
-          if exist regression.diffs (
-            type regression.diffs
-          ) else (
-            echo No regression.diffs found
-          )
-        shell: cmd
-
-  # Keep your i386 container job as-is but add an early pg_config check
+      - if: ${{ failure() }}
+        run: cat regression.diffs
   i386:
-    name: i386 (postgres 15)
     if: ${{ !startsWith(github.ref_name, 'mac') && !startsWith(github.ref_name, 'windows') }}
     runs-on: ubuntu-latest
     container:
       image: debian:12
       options: --platform linux/386
     steps:
-      - name: Minimal packages
-        run: apt-get update && apt-get install -y build-essential git libipc-run-perl postgresql-15 postgresql-server-dev-15 sudo
-
-      - name: Start Postgres
-        run: service postgresql start || true
-
-      - name: Build & install (i386)
-        id: build_install
-        run: |
-          set -e
+      - run: apt-get update && apt-get install -y build-essential git libipc-run-perl postgresql-15 postgresql-server-dev-15 sudo
+      - run: service postgresql start
+      - run: |
           git clone https://github.com/${{ github.repository }}.git pg-ulid
           cd pg-ulid
           git fetch origin ${{ github.ref }}
           git reset --hard FETCH_HEAD
-          echo "=== repo sql/ listing ==="
-          ls -la sql || true
-          echo "=== repo src/ listing ==="
-          ls -la src || true
-          echo "=== Cleaning previous build artifacts ==="
-          make clean || true
-          rm -f src/*.o src/*.bc *.o *.bc || true
-          echo "=== Building extension (i386) ==="
           make
-          echo "=== Installing extension ==="
-          export PG_CONFIG=$(which pg_config)
-          sudo --preserve-env=PG_CONFIG make install
-        env:
-          PG_CFLAGS: "-DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare"
-
-      - name: Ensure Postgres running (i386)
-        run: |
-          sudo service postgresql start || true
-          until pg_isready; do
-            echo "Waiting for PostgreSQL..."
-            sleep 1
-          done
-
-      - name: Run regression tests (i386)
-        id: run_tests
-        run: |
-          set -e
-          cd pg-ulid
-          echo "=== Running installcheck as postgres user ==="
+          make install
+          chown -R postgres .
           sudo -u postgres make installcheck
+          sudo -u postgres make prove_installcheck
         env:
-          PG_CFLAGS: "-DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare"
-
-      - name: Show regression.diffs on failure
-        if: ${{ failure() }}
-        run: |
-          echo "Working directory contents:"
-          ls -la
-          echo "Checking for regression.diffs:"
-          if [ -f pg-ulid/regression.diffs ]; then
-            cat pg-ulid/regression.diffs
-          else
-            echo "No regression.diffs found in pg-ulid/"
-          fi
+          PG_CFLAGS: -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare
+      - if: ${{ failure() }}
+        run: cat pg-ulid/regression.diffs

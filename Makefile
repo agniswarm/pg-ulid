@@ -1,58 +1,63 @@
-# Makefile for ulid extension (C implementation) - cross-platform (Linux/macOS)
-
 EXTENSION = ulid
-VERSION ?= 0.1.1
-DATA = sql/$(EXTENSION)--$(VERSION).sql
+EXTVERSION = 0.1.1
 
-# PGXS module / object definitions
-MODULES = $(EXTENSION)
-OBJS = $(EXTENSION).o
+MODULE_big = ulid
+DATA_built = sql/$(EXTENSION)--$(EXTVERSION).sql
+OBJS = src/ulid.o
+
+TESTS = $(wildcard test/sql/*.sql)
+REGRESS = $(patsubst test/sql/%.sql,%,$(TESTS))
+REGRESS_OPTS = --load-extension=$(EXTENSION)
+
+# If no tests directory exists, use basic tests
+ifeq ($(TESTS),)
+	REGRESS = ulid_basic
+	REGRESS_OPTS = --load-extension=$(EXTENSION)
+endif
+
 PG_CONFIG ?= pg_config
-
-# --- Safety checks for pg_config / pgxs ---
-
-PG_CONFIG_PATH := $(shell which $(PG_CONFIG) 2>/dev/null || true)
-ifeq ($(PG_CONFIG_PATH),)
-$(error "pg_config not found in PATH. Ensure Postgres dev files are installed and pg_config is on PATH")
-endif
-
-PGXS := $(shell $(PG_CONFIG) --pgxs 2>/dev/null || true)
-ifeq ($(PGXS),)
-$(error "pg_config found but --pgxs did not return a value. Ensure Postgres dev files (pgxs) are available.")
-endif
-
-# --- Compiler/linker flags ---
-
-# Avoid LTO to prevent macOS clang/LLVM bitcode issues
-PG_CPPFLAGS += -fno-lto -fno-fat-lto-objects
-PG_CFLAGS   += -fno-lto -fno-fat-lto-objects
-PG_LDFLAGS  += -fno-lto -fno-fat-lto-objects
-
-# --- Include PGXS makefile generator ---
-# This provides targets: all, install, installcheck, clean, etc.
+PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
-# --- Explicit compile rules ---
-# OBJS is "ulid.o", so we tell make how to build it from src/ulid.c
-$(EXTENSION).o: src/$(EXTENSION).c
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+# Build the main SQL file from template if needed
+sql/$(EXTENSION)--$(EXTVERSION).sql: sql/$(EXTENSION)--$(EXTVERSION).sql
+	@# File already exists, no need to copy
 
-# Rule for building bitcode file (for PostgreSQL JIT compilation)
-# Only build if we have the necessary tools
-ifneq ($(CLANG),)
-$(EXTENSION).bc: src/$(EXTENSION).c
-	$(CLANG) $(BITCODE_CPPFLAGS) $(BITCODE_CFLAGS) -c -o $@ $<
+# For Mac
+ifeq ($(PROVE),)
+	PROVE = prove
 endif
 
-# --- Extra targets ---
+# For Postgres < 15
+PROVE_FLAGS += -I ./test/perl
 
-# Install a helper binary if you ever add one (no-op by default)
-install-binary:
-	@echo "install-binary: no helper binary to install by default (add commands if needed)"
+prove_installcheck:
+	rm -rf $(CURDIR)/tmp_check
+	cd $(srcdir) && TESTDIR='$(CURDIR)' PATH="$(bindir):$$PATH" PGPORT='6$(DEF_PGPORT)' PG_REGRESS='$(top_builddir)/src/test/regress/pg_regress' $(PROVE) $(PG_PROVE_FLAGS) $(PROVE_FLAGS) $(if $(PROVE_TESTS),$(PROVE_TESTS),test/t/*.pl)
 
-# Override clean to handle both locations
-clean:
-	rm -f $(EXTENSION).o $(EXTENSION).so $(EXTENSION).bc
-	rm -f src/*.o src/*.so src/*.bc
+# Basic test fallback if no test directory
+test/sql/ulid_basic.sql:
+	@mkdir -p test/sql test/expected
+	@echo "-- Basic ULID extension test" > test/sql/ulid_basic.sql
+	@echo "CREATE EXTENSION ulid;" >> test/sql/ulid_basic.sql
+	@echo "SELECT ulid() IS NOT NULL AS ulid_generated;" >> test/sql/ulid_basic.sql
+	@echo "SELECT ulid_random() IS NOT NULL AS ulid_random_generated;" >> test/sql/ulid_basic.sql
+	@echo "DROP EXTENSION ulid;" >> test/sql/ulid_basic.sql
+	@echo "-- Basic ULID extension test" > test/expected/ulid_basic.out
+	@echo "CREATE EXTENSION ulid;" >> test/expected/ulid_basic.out
+	@echo "SELECT ulid() IS NOT NULL AS ulid_generated;" >> test/expected/ulid_basic.out
+	@echo " ulid_generated " >> test/expected/ulid_basic.out
+	@echo "----------------" >> test/expected/ulid_basic.out
+	@echo " t" >> test/expected/ulid_basic.out
+	@echo "(1 row)" >> test/expected/ulid_basic.out
+	@echo "" >> test/expected/ulid_basic.out
+	@echo "SELECT ulid_random() IS NOT NULL AS ulid_random_generated;" >> test/expected/ulid_basic.out
+	@echo " ulid_random_generated " >> test/expected/ulid_basic.out
+	@echo "-----------------------" >> test/expected/ulid_basic.out
+	@echo " t" >> test/expected/ulid_basic.out
+	@echo "(1 row)" >> test/expected/ulid_basic.out
+	@echo "" >> test/expected/ulid_basic.out
+	@echo "DROP EXTENSION ulid;" >> test/expected/ulid_basic.out
 
-.PHONY: install-binary clean
+# Ensure test files exist before running installcheck
+installcheck: test/sql/ulid_basic.sql
