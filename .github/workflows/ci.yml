@@ -112,23 +112,50 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Install PostgreSQL via Chocolatey
+      - name: Download and install PostgreSQL
         shell: pwsh
         run: |
-          Set-ExecutionPolicy Bypass -Scope Process -Force
-          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-          choco feature enable -n=allowGlobalConfirmation
-          choco install postgresql${{ matrix.postgres }} --version=${{ matrix.postgres }}.0.0 -y --params '/SuperPassword:postgres'
-          refreshenv
+          $postgresVersion = "${{ matrix.postgres }}"
+          
+          # Use a different download URL that should work
+          if ($postgresVersion -eq "17") {
+            $installerUrl = "https://ftp.postgresql.org/pub/pgadmin/pgadmin4/v8.9/runtime/postgresql-17.0-1-windows-x64.exe"
+          } elseif ($postgresVersion -eq "16") {
+            $installerUrl = "https://ftp.postgresql.org/pub/pgadmin/pgadmin4/v8.9/runtime/postgresql-16.4-1-windows-x64.exe"
+          } else {
+            $installerUrl = "https://ftp.postgresql.org/pub/pgadmin/pgadmin4/v8.9/runtime/postgresql-14.11-1-windows-x64.exe"
+          }
+          
+          $installerPath = "$env:TEMP\postgresql-installer.exe"
+          
+          Write-Host "Downloading PostgreSQL $postgresVersion from $installerUrl"
+          try {
+            Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath
+          } catch {
+            Write-Host "Failed to download from primary URL, trying alternative..."
+            # Alternative URL if the first one fails
+            $installerUrl = "https://get.enterprisedb.com/postgresql/postgresql-$postgresVersion-1-windows-x64.exe"
+            Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath
+          }
+          
+          Write-Host "Installing PostgreSQL $postgresVersion"
+          Start-Process -FilePath $installerPath -ArgumentList "--unattendedmodeui minimal --mode unattended --superpassword postgres --servicename postgresql$postgresVersion --servicepassword postgres --serverport 5432" -Wait
+          
+          # Add PostgreSQL to PATH
+          $pgPath = "C:\Program Files\PostgreSQL\$postgresVersion\bin"
+          $env:PATH = "$pgPath;$env:PATH"
+          echo "$pgPath" | Out-File -FilePath $env:GITHUB_PATH -Append
+          echo "PGROOT=C:\Program Files\PostgreSQL\$postgresVersion" | Out-File -FilePath $env:GITHUB_ENV -Append
+          
+          Write-Host "PostgreSQL installation completed"
       
-      - name: Set PGROOT environment variable
+      - name: Verify PostgreSQL installation
         shell: pwsh
         run: |
-          $pgPath = Get-Command pg_config | Select-Object -ExpandProperty Source
-          $pgDir = Split-Path (Split-Path $pgPath)
-          echo "PGROOT=$pgDir" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "Found PostgreSQL at: $pgDir"
+          Write-Host "PostgreSQL version:"
+          pg_config --version
+          Write-Host "PGROOT: $env:PGROOT"
+          Write-Host "PATH contains PostgreSQL: $env:PATH.Contains('PostgreSQL')"
       
       - name: Build with nmake
         shell: cmd
