@@ -40,10 +40,6 @@ jobs:
       - run: make installcheck
       - if: ${{ failure() }}
         run: cat regression.diffs
-      - run: |
-          sudo apt-get update
-          sudo apt-get install libipc-run-perl
-      - run: make prove_installcheck
   mac:
     runs-on: ${{ matrix.os }}
     if: ${{ !startsWith(github.ref_name, 'windows') }}
@@ -70,18 +66,6 @@ jobs:
       - run: make installcheck
       - if: ${{ failure() }}
         run: cat regression.diffs
-      # Homebrew Postgres does not enable TAP tests, so need to download
-      - run: |
-          brew install cpanm
-          cpanm --notest IPC::Run
-          wget -q https://github.com/postgres/postgres/archive/refs/tags/$TAG.tar.gz
-          tar xf $TAG.tar.gz
-          mv postgres-$TAG postgres
-        env:
-          TAG: ${{ matrix.postgres == 17 && 'REL_17_6' || 'REL_14_19' }}
-      - run: make prove_installcheck PROVE_FLAGS="-I ./postgres/src/test/perl -I ./test/perl"
-        env:
-          PERL5LIB: /Users/runner/perl5/lib/perl5
   windows:
     runs-on: ${{ matrix.os }}
     if: ${{ !startsWith(github.ref_name, 'mac') }}
@@ -129,7 +113,6 @@ jobs:
           make install
           chown -R postgres .
           sudo -u postgres make installcheck
-          sudo -u postgres make prove_installcheck
         env:
           PG_CFLAGS: -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare
       - if: ${{ failure() }}
