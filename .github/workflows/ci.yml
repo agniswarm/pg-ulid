@@ -28,7 +28,15 @@ jobs:
           # - postgres: 13
           #   os: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Repo info (diagnostics)
+        run: |
+          echo ">>> HEAD commit:"
+          git rev-parse HEAD || true
+          echo ">>> Branch / ref: $GITHUB_REF"
+          ls -la || true
 
       - name: Setup Postgres
         uses: ankane/setup-postgres@v1
@@ -36,17 +44,46 @@ jobs:
           postgres-version: ${{ matrix.postgres }}
           dev-files: true
 
-      - name: Build
+      - name: pg_config info
         run: |
-          export PG_CFLAGS="${{ matrix.postgres >= 18 && '-Wno-missing-field-initializers' || '' }} -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare"
+          which pg_config
+          pg_config --version
+          echo "pkglibdir=$(pg_config --pkglibdir)"
+          echo "sharedir=$(pg_config --sharedir)"
+          ls -la "$(pg_config --sharedir)/extension" || true
+
+      - name: Setup Go (for generator if needed)
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.21"
+
+      - name: Clean previous artifacts
+        run: |
           make clean || true
           rm -f src/*.o src/*.bc || true
+          ls -la src || true
+          ls -la sql || true
+
+      - name: Build
+        env:
+          PG_CFLAGS: "${{ matrix.postgres >= 18 && '-Wno-missing-field-initializers' || '' }} -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare"
+        run: |
+          echo "PG_CFLAGS=$PG_CFLAGS"
           make
 
-      - name: Install (preserve PG_CONFIG)
+      - name: Install (install-local, preserve PG_CONFIG)
         run: |
           export PG_CONFIG=$(which pg_config)
-          sudo --preserve-env=PG_CONFIG make install
+          sudo --preserve-env=PG_CONFIG make install-local
+
+      - name: Show installed files
+        run: |
+          echo "pkglibdir:"
+          ls -la "$(pg_config --pkglibdir)" || true
+          echo "sharedir/extension:"
+          ls -la "$(pg_config --sharedir)/extension" || true
+          echo "ulid--*.sql:"
+          ls -la "$(pg_config --sharedir)/extension/ulid--*.sql" || true
 
       - name: Ensure Postgres running
         run: |
@@ -56,7 +93,7 @@ jobs:
             sleep 1
           done
 
-      - name: installcheck
+      - name: Run installcheck
         run: make installcheck
 
       - name: Show regression.diffs on failure
@@ -67,7 +104,6 @@ jobs:
           else
             echo "No regression.diffs found"
           fi
-
   mac:
     name: macos latest (postgres ${{ matrix.postgres }})
     runs-on: ${{ matrix.os }}
@@ -201,6 +237,7 @@ jobs:
             echo No regression.diffs found
           )
         shell: cmd
+
   i386:
     name: i386 (postgres 15)
     if: ${{ !startsWith(github.ref_name, 'mac') && !startsWith(github.ref_name, 'windows') }}
