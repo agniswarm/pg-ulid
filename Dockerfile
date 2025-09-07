@@ -4,7 +4,7 @@
 FROM ubuntu:24.04
 
 # allow build-time override
-ARG POSTGRES_VERSION=16
+ARG POSTGRES_VERSION=17
 ENV POSTGRES_VERSION=${POSTGRES_VERSION}
 ENV PG_LIB_DIR=/usr/lib/postgresql/${POSTGRES_VERSION}/lib
 ENV PG_SHARE_DIR=/usr/share/postgresql/${POSTGRES_VERSION}/extension
@@ -104,4 +104,4 @@ RUN set -eux; \
 EXPOSE 5432
 
 # Default: show postgres version (user can override CMD to run postgres or bash)
-CMD ["bash", "-lc", "exec /usr/lib/postgresql/${POSTGRES_VERSION}/bin/postgres --version && bash"]
+CMD ["postgres"]

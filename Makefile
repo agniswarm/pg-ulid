@@ -101,26 +101,6 @@ installcheck: all
 		exit 1; \
 	fi
 
-# Test specific PostgreSQL version using Docker
-test-docker:
-	@echo "Testing with Docker builds..."
-	@echo "Available PostgreSQL versions:"
-	@echo "  make test-pg14  - Test PostgreSQL 14 (Ubuntu 22.04)"
-	@echo "  make test-pg16  - Test PostgreSQL 16 (Ubuntu 24.04)"
-	@echo "  make test-pg17  - Test PostgreSQL 17 (Ubuntu 22.04)"
-
-test-pg14:
-	@echo "Testing PostgreSQL 14 on Ubuntu 22.04..."
-	docker build --build-arg POSTGRES_VERSION=14 -t ulid-pg:14 .
-
-test-pg16:
-	@echo "Testing PostgreSQL 16 on Ubuntu 24.04..."
-	docker build --build-arg POSTGRES_VERSION=16 -t ulid-pg:16 .
-
-test-pg17:
-	@echo "Testing PostgreSQL 17 on Ubuntu 22.04..."
-	docker build --build-arg POSTGRES_VERSION=17 -t ulid-pg:17 .
-
 # Help target
 help:
 	@echo "Available targets:"
@@ -128,10 +108,6 @@ help:
 	@echo "  install          - Install the extension"
 	@echo "  installcheck     - Run comprehensive extension tests"
 	@echo "  clean            - Clean build artifacts"
-	@echo "  test-docker      - Show Docker testing options"
-	@echo "  test-pg14        - Test PostgreSQL 14 with Docker"
-	@echo "  test-pg16        - Test PostgreSQL 16 with Docker"
-	@echo "  test-pg17        - Test PostgreSQL 17 with Docker"
 	@echo "  help             - Show this help message"
 
 .PHONY: all install installcheck clean test-docker test-pg14 test-pg16 test-pg17 help

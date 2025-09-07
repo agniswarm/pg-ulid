@@ -116,7 +116,7 @@ LANGUAGE C VOLATILE;
 -- Define utility functions
 CREATE OR REPLACE FUNCTION ulid_timestamp(ulid)
 RETURNS bigint
-AS 'MODULE_PATHNAME', 'ulid_timestamp'
+AS 'MODULE_PATHNAME', 'ulid_timestamp_fn'
 LANGUAGE C IMMUTABLE STRICT;
 
 CREATE OR REPLACE FUNCTION ulid_to_uuid(ulid)
@@ -133,28 +133,28 @@ LANGUAGE C IMMUTABLE STRICT;
 
 -- Basic convenience functions
 CREATE OR REPLACE FUNCTION ulid()
-RETURNS text
+RETURNS ulid
 AS $$
-    SELECT ulid_out(ulid_generate_monotonic());
+    SELECT ulid_generate_monotonic();
 $$ LANGUAGE sql VOLATILE;
 
 CREATE OR REPLACE FUNCTION ulid_random()
-RETURNS text
+RETURNS ulid
 AS $$
-    SELECT ulid_out(ulid_generate());
+    SELECT ulid_generate();
 $$ LANGUAGE sql VOLATILE;
 
 CREATE OR REPLACE FUNCTION ulid_crypto()
-RETURNS text
+RETURNS ulid
 AS $$
-    SELECT ulid_out(ulid_generate());
+    SELECT ulid_generate();
 $$ LANGUAGE sql VOLATILE;
 
 -- Generate ULID with specific timestamp
 CREATE OR REPLACE FUNCTION ulid_time(timestamp_ms BIGINT)
-RETURNS text
+RETURNS ulid
 AS $$
-    SELECT ulid_out(ulid_generate_with_timestamp(timestamp_ms));
+    SELECT ulid_generate_with_timestamp(timestamp_ms);
 $$ LANGUAGE sql VOLATILE;
 
 -- Parse and validate ULID
@@ -180,13 +180,13 @@ $$ LANGUAGE sql IMMUTABLE STRICT;
 
 -- Batch generation functions
 CREATE OR REPLACE FUNCTION ulid_batch(count INTEGER)
-RETURNS TEXT[]
+RETURNS ulid[]
 AS $$
     SELECT array_agg(ulid()) FROM generate_series(1, count);
 $$ LANGUAGE sql VOLATILE;
 
 CREATE OR REPLACE FUNCTION ulid_random_batch(count INTEGER)
-RETURNS TEXT[]
+RETURNS ulid[]
 AS $$
     SELECT array_agg(ulid_random()) FROM generate_series(1, count);
 $$ LANGUAGE sql VOLATILE;
@@ -218,6 +218,13 @@ AS $$
     SELECT to_timestamp(ulid_timestamp(ulid_val) / 1000.0);
 $$ LANGUAGE sql IMMUTABLE STRICT;
 
+-- Convert ULID to timestamptz (for casting)
+CREATE OR REPLACE FUNCTION ulid_to_timestamptz_cast(ulid_val ulid)
+RETURNS TIMESTAMPTZ
+AS $$
+    SELECT to_timestamp(ulid_timestamp(ulid_val) / 1000.0);
+$$ LANGUAGE sql IMMUTABLE STRICT;
+
 -- Define casting functions with proper type signatures
 CREATE OR REPLACE FUNCTION text_to_ulid_cast(text_val text)
 RETURNS ulid
@@ -231,10 +238,28 @@ AS $$
     SELECT ulid_out(ulid_val)::text;
 $$ LANGUAGE sql IMMUTABLE STRICT;
 
+-- Convert ULID to bytea (for casting)
+CREATE OR REPLACE FUNCTION ulid_to_bytea_cast(ulid_val ulid)
+RETURNS bytea
+AS $$
+    SELECT ulid_send(ulid_val);
+$$ LANGUAGE sql IMMUTABLE STRICT;
+
+-- Convert bytea to ULID (for casting) - using proper binary conversion
+CREATE OR REPLACE FUNCTION bytea_to_ulid_cast(bytea_val bytea)
+RETURNS ulid
+AS $$
+    SELECT ulid_in(encode(bytea_val, 'base64')::cstring);
+$$ LANGUAGE sql IMMUTABLE STRICT;
+
 -- Define the casts
 CREATE CAST (text AS ulid) WITH FUNCTION text_to_ulid_cast(text) AS ASSIGNMENT;
 CREATE CAST (ulid AS text) WITH FUNCTION ulid_to_text_cast(ulid) AS ASSIGNMENT;
 CREATE CAST (timestamp AS ulid) WITH FUNCTION timestamp_to_ulid_cast(timestamp) AS ASSIGNMENT;
 CREATE CAST (ulid AS timestamp) WITH FUNCTION ulid_to_timestamp_cast(ulid) AS ASSIGNMENT;
+CREATE CAST (timestamptz AS ulid) WITH FUNCTION timestamptz_to_ulid_cast(timestamptz) AS ASSIGNMENT;
+CREATE CAST (ulid AS timestamptz) WITH FUNCTION ulid_to_timestamptz_cast(ulid) AS ASSIGNMENT;
+CREATE CAST (ulid AS bytea) WITH FUNCTION ulid_to_bytea_cast(ulid) AS ASSIGNMENT;
+CREATE CAST (bytea AS ulid) WITH FUNCTION bytea_to_ulid_cast(bytea) AS ASSIGNMENT;
 CREATE CAST (ulid AS uuid) WITH FUNCTION ulid_to_uuid(ulid) AS ASSIGNMENT;
 CREATE CAST (uuid AS ulid) WITH FUNCTION ulid_from_uuid(uuid) AS ASSIGNMENT;
