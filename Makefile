@@ -1,68 +1,128 @@
-# Makefile for ulid extension (Go implementation)
+# Makefile for ulid extension (C implementation)
 
 EXTENSION = ulid
-VERSION ?= 1.0.0
+VERSION ?= 0.1.1
 DATA = sql/$(EXTENSION)--$(VERSION).sql
 
+
+# C extension
+MODULE_big = ulid
+OBJS = src/ulid.o
+
+# PostgreSQL configuration
 PG_CONFIG ?= pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
+
+# Disable bitcode generation to avoid LLVM version conflicts
+PG_CPPFLAGS += -fno-lto
+PG_CFLAGS += -fno-lto
+
 include $(PGXS)
 
-SRC_SQL := $(firstword $(wildcard sql/$(EXTENSION)--*.sql))
-SQL_BASENAME := $(notdir $(SRC_SQL))
-CONTROL_FILE := $(EXTENSION).control
+# Clean targets
+clean:
+	rm -f src/*.o
+	rm -f $(MODULE_big).so
+	rm -f $(MODULE_big).dll
+	rm -f regression.diffs
+	rm -f regression.out
 
-all: ulid_generator
+# Install target (standard PostgreSQL extension install)
+install: all
+	$(MAKE) -C . install
 
-# Build the Go binary. Do not force CGO by default; honor CGO_ENABLED/GOARCH if set.
-# Build the Go binary
-ulid_generator: src/ulid.go
-	cd src && go mod download
-	cd src && go build -o ../ulid_generator ulid.go
+# Install-local target (for CI compatibility)
+install-local: all
+	$(MAKE) -C . install
 
-install-binary: ulid_generator
-	@echo "Installing ulid_generator to $(DESTDIR)$(bindir)"
-	install -d -m 0755 $(DESTDIR)$(bindir)
-	install -m 0755 ulid_generator $(DESTDIR)$(bindir)/ulid_generator
+# Test target
+installcheck: all
+	$(MAKE) -C . install
+	$(MAKE) -C . installcheck-local
 
-# New: install-local — safe, non-PGXS install that writes control+sql and binary
-install-local: install-binary
-	@echo "Preparing to install extension files (install-local)..."
-	@if [ -z "$(SRC_SQL)" ]; then \
-		echo "ERROR: no sql/$(EXTENSION)--*.sql file found in source tree."; \
-		echo "Present files:"; ls -la sql || true; \
-		exit 2; \
-	fi
-	@echo "Using source SQL: $(SRC_SQL)"
-	install -d -m 0755 $(DESTDIR)$(datadir)/extension
-	# write the substituted SQL into datadir/extension
-	sed "s|@BINDIR@|$(bindir)|g" "$(SRC_SQL)" > "$(DESTDIR)$(datadir)/extension/$(SQL_BASENAME)"
-	# install control file (copy from repo to datadir/extension)
-	if [ -f "$(CONTROL_FILE)" ]; then \
-		install -m 0644 "$(CONTROL_FILE)" "$(DESTDIR)$(datadir)/extension/$(CONTROL_FILE)"; \
+installcheck-local:
+	@echo "Testing ULID extension..."
+	@if command -v psql >/dev/null 2>&1; then \
+		echo "CREATE EXTENSION ulid;" | psql -d postgres; \
+		echo "SELECT ulid();" | psql -d postgres; \
+		echo "SELECT '01ARZ3NDEKTSV4RRFFQ69G5FAV'::ulid;" | psql -d postgres; \
+		echo "SELECT ulid()::timestamp;" | psql -d postgres; \
+		echo "SELECT '2023-09-15 12:00:00'::timestamp::ulid;" | psql -d postgres; \
+		echo "DROP EXTENSION ulid;" | psql -d postgres; \
 	else \
-		echo "Warning: control file '$(CONTROL_FILE)' not found in repo (install-local will continue)"; \
+		echo "psql not found - tests skipped"; \
 	fi
-	@echo "install-local completed: binary -> $(DESTDIR)$(bindir), files -> $(DESTDIR)$(datadir)/extension/"
 
-# Legacy install left alone (do not override PGXS's install target)
-.PHONY: install-local install-binary all ulid_generator test installcheck clean
-
-# Run Go unit tests
-test:
-	cd test && go test -v ./...
-
-installcheck:
-	@echo "Running PostgreSQL extension tests..."
-	@if ./test/build/ci.sh; then \
-		echo "Extension tests passed!"; \
+# Run comprehensive SQL tests (like CI scripts)
+test-sql: all
+	@echo "Running comprehensive SQL tests..."
+	@if command -v psql >/dev/null 2>&1; then \
+		psql -c "CREATE DATABASE testdb;" || echo "testdb already exists"; \
+		psql -d testdb -c "CREATE EXTENSION IF NOT EXISTS ulid;"; \
+		psql -d testdb -f test/sql/pgtap_functions.sql; \
+		for test_file in test/sql/*.sql; do \
+			if [ "$$(basename $$test_file)" != "pgtap_functions.sql" ]; then \
+				echo "Running $$test_file..."; \
+				psql -d testdb -f "$$test_file"; \
+			fi; \
+		done; \
+		psql -c "DROP DATABASE IF EXISTS testdb;"; \
 	else \
-		echo "Extension tests failed or PostgreSQL not available."; \
-		echo "In CI, PostgreSQL should be running. Locally, start PostgreSQL first."; \
+		echo "psql not found - SQL tests skipped"; \
+	fi
+
+# Run comprehensive tests using Docker
+test-docker:
+	@echo "Running comprehensive tests using Docker..."
+	@if command -v docker >/dev/null 2>&1; then \
+		docker build -t pg-ulid-test . && \
+		docker run --rm -d --name pg-ulid-test pg-ulid-test && \
+		sleep 5 && \
+		docker exec pg-ulid-test psql -U postgres -d testdb -c "CREATE EXTENSION ulid;" && \
+		docker exec pg-ulid-test psql -U postgres -d testdb -f /tmp/test_sql/pgtap_functions.sql && \
+		for test_file in test/sql/*.sql; do \
+			if [ "$$(basename $$test_file)" != "pgtap_functions.sql" ]; then \
+				echo "Running $$test_file..."; \
+				docker cp $$test_file pg-ulid-test:/tmp/test_sql/; \
+				docker exec pg-ulid-test psql -U postgres -d testdb -f /tmp/test_sql/$$(basename $$test_file); \
+			fi; \
+		done && \
+		docker stop pg-ulid-test; \
+	else \
+		echo "Docker not found - comprehensive tests skipped"; \
+	fi
+
+# Run specific test file
+test-file:
+	@if [ -z "$(FILE)" ]; then \
+		echo "Usage: make test-file FILE=test/sql/01_basic_functionality.sql"; \
 		exit 1; \
 	fi
+	@echo "Running test file: $(FILE)"
+	@if command -v docker >/dev/null 2>&1; then \
+		docker build -t pg-ulid-test . && \
+		docker run --rm -d --name pg-ulid-test pg-ulid-test && \
+		sleep 5 && \
+		docker exec pg-ulid-test psql -U postgres -d testdb -c "CREATE EXTENSION ulid;" && \
+		docker exec pg-ulid-test psql -U postgres -d testdb -f /tmp/test_sql/pgtap_functions.sql && \
+		docker cp $(FILE) pg-ulid-test:/tmp/test_sql/ && \
+		docker exec pg-ulid-test psql -U postgres -d testdb -f /tmp/test_sql/$$(basename $(FILE)) && \
+		docker stop pg-ulid-test; \
+	else \
+		echo "Docker not found - test skipped"; \
+	fi
 
-clean:
-	rm -f ulid_generator
-	cd src && go clean
-	cd test && go clean -testcache
+# Help target
+help:
+	@echo "Available targets:"
+	@echo "  all              - Build the extension (default)"
+	@echo "  install          - Install the extension"
+	@echo "  install-local    - Install the extension (CI compatibility)"
+	@echo "  installcheck     - Run basic extension tests"
+	@echo "  test-sql         - Run comprehensive SQL test suite"
+	@echo "  test-docker      - Run comprehensive tests using Docker"
+	@echo "  test-file        - Run specific test file (FILE=path required)"
+	@echo "  clean            - Clean build artifacts"
+	@echo "  help             - Show this help message"
+
+.PHONY: all install install-local installcheck installcheck-local test-sql test-docker test-file clean help

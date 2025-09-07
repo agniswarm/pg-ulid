@@ -1,5 +1,5 @@
 # ulid extension
-comment = 'Universally Unique Lexicographically Sortable Identifier (ULID) for PostgreSQL - Go implementation'
-default_version = '1.0.0'
+comment = 'ULID (Universally Unique Lexicographically Sortable Identifier) extension for PostgreSQL'
+default_version = '0.1.1'
 module_pathname = '$libdir/ulid'
 relocatable = true

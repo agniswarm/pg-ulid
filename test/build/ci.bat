@@ -1,8 +1,9 @@
 @echo off
 setlocal enabledelayedexpansion
 
-REM Standalone PostgreSQL Extension Test Script for Windows (robust)
-echo Running PostgreSQL extension tests...
+REM Comprehensive PostgreSQL Extension Test Script for Windows
+REM Runs the full SQL test suite from test/sql/ directory
+echo Running comprehensive PostgreSQL extension tests...
 
 REM Check if PostgreSQL is running
 pg_isready >nul 2>&1
@@ -15,6 +16,16 @@ if %ERRORLEVEL% NEQ 0 (
 
 REM Use the default postgres database
 set PGDATABASE=postgres
+
+REM Create test database
+echo Creating test database...
+psql -v ON_ERROR_STOP=1 -q -c "CREATE DATABASE testdb;" >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo WARNING: testdb already exists or creation failed, continuing...
+)
+
+REM Switch to test database
+set PGDATABASE=testdb
 
 REM Helper: run a psql command with ON_ERROR_STOP
 REM Usage: CALL :psql_run "SQL" varToCapture
@@ -45,95 +56,65 @@ if %ERRORLEVEL% NEQ 0 (
   echo ERROR: Failed to create extension. Make sure it's properly installed.
   echo Check that the extension files are in the correct location:
   echo   - %PGSHARE%\extension\ulid.control
-  echo   - %PGSHARE%\extension\ulid--1.0.0.sql
+  echo   - %PGSHARE%\extension\ulid--0.1.1.sql
   exit /b 1
 )
 
-REM Test ulid()
-echo Testing ulid() function...
-call :psql_run "SELECT ulid();" ULID_VAL
-if %ERRORLEVEL% NEQ 0 (
-  echo ERROR: ulid() function test failed
+REM Get the directory where this script is located
+set SCRIPT_DIR=%~dp0
+set PROJECT_ROOT=%SCRIPT_DIR%..\..
+set SQL_TEST_DIR=%PROJECT_ROOT%\test\sql
+
+REM Check if SQL test directory exists
+if not exist "%SQL_TEST_DIR%" (
+  echo ERROR: SQL test directory not found: %SQL_TEST_DIR%
   exit /b 1
 )
-echo ulid() => %ULID_VAL%
 
-REM Test ulid_random()
-echo Testing ulid_random() function...
-call :psql_run "SELECT ulid_random();" ULID_RAND
+REM Load pgTAP functions first
+echo Loading pgTAP functions...
+psql -v ON_ERROR_STOP=1 -q -f "%SQL_TEST_DIR%\pgtap_functions.sql"
 if %ERRORLEVEL% NEQ 0 (
-  echo ERROR: ulid_random() function test failed
+  echo ERROR: Failed to load pgTAP functions
   exit /b 1
 )
-echo ulid_random() => %ULID_RAND%
 
-REM Test ulid_time()
-echo Testing ulid_time() function...
-REM pass bigint milliseconds (cast explicitly)
-call :psql_run "SELECT ulid_time((extract(epoch from now()) * 1000)::BIGINT);" ULID_TIME
-if %ERRORLEVEL% NEQ 0 (
-  echo ERROR: ulid_time() function test failed
-  exit /b 1
-)
-echo ulid_time() => %ULID_TIME%
+REM Run all SQL test files
+echo Running comprehensive SQL tests...
+set FAILED_TESTS=0
 
-REM Test ulid_batch(5)
-echo Testing ulid_batch(5) length...
-call :psql_run "SELECT array_length(ulid_batch(5),1);" BATCH_LEN
-if %ERRORLEVEL% NEQ 0 (
-  echo ERROR: ulid_batch() function test failed
-  exit /b 1
-)
-echo ulid_batch(5) length => %BATCH_LEN%
+REM Test files array
+set TEST_FILES=01_basic_functionality.sql 02_casting_operations.sql 03_monotonic_generation.sql 04_stress_tests.sql 05_binary_storage.sql 06_database_operations.sql 07_error_handling.sql
 
-REM Test ulid_random_batch(3)
-echo Testing ulid_random_batch(3) length...
-call :psql_run "SELECT array_length(ulid_random_batch(3),1);" RAND_BATCH_LEN
-if %ERRORLEVEL% NEQ 0 (
-  echo ERROR: ulid_random_batch() function test failed
-  exit /b 1
-)
-echo ulid_random_batch(3) length => %RAND_BATCH_LEN%
-
-REM Test ulid_parse() valid example
-echo Testing ulid_parse() valid example...
-call :psql_run "SELECT is_valid FROM ulid_parse('01K4FQ7QN4ZSW0SG5XACGM2HB4');" PARSE_OK
-if %ERRORLEVEL% NEQ 0 (
-  echo ERROR: ulid_parse() function test failed
-  exit /b 1
-)
-echo ulid_parse(valid) => %PARSE_OK%
-
-REM Test ulid_parse() invalid example (expect false or a result)
-echo Testing ulid_parse() invalid example...
-call :psql_run "SELECT is_valid FROM ulid_parse('invalid-ulid');" PARSE_INVALID
-if %ERRORLEVEL% NEQ 0 (
-  echo WARNING: ulid_parse(invalid) returned error (this may be acceptable)
-) else (
-  echo ulid_parse(invalid) => %PARSE_INVALID%
-)
-
-REM Test edge cases
-echo Testing ulid_batch(0)...
-call :psql_run "SELECT ulid_batch(0);" BATCH_ZERO
-if %ERRORLEVEL% NEQ 0 (
-  echo ERROR: ulid_batch(0) failed
-  exit /b 1
-)
-echo ulid_batch(0) => %BATCH_ZERO%
-
-echo Testing ulid_batch(-1) (expect error)...
-psql -v ON_ERROR_STOP=1 -q -c "SELECT ulid_batch(-1);" >nul 2>&1
-if %ERRORLEVEL% EQU 0 (
-  echo WARNING: ulid_batch(-1) unexpectedly succeeded
-) else (
-  echo ulid_batch(-1) produced expected error.
+for %%f in (%TEST_FILES%) do (
+  set TEST_FILE=%%f
+  set TEST_PATH=%SQL_TEST_DIR%\%%f
+  if exist "!TEST_PATH!" (
+    echo Running !TEST_FILE!...
+    psql -v ON_ERROR_STOP=1 -q -f "!TEST_PATH!"
+    if !ERRORLEVEL! NEQ 0 (
+      echo ERROR: Test !TEST_FILE! failed
+      set /a FAILED_TESTS+=1
+    ) else (
+      echo ✅ !TEST_FILE! passed
+    )
+  ) else (
+    echo WARNING: Test file !TEST_FILE! not found, skipping
+  )
 )
 
 REM Clean up
 echo Cleaning up...
 psql -v ON_ERROR_STOP=1 -q -c "DROP EXTENSION IF EXISTS ulid;" >nul 2>&1
+psql -v ON_ERROR_STOP=1 -q -c "DROP DATABASE IF EXISTS testdb;" >nul 2>&1
 
-echo All tests completed.
-endlocal
-exit /b 0
+REM Report results
+if %FAILED_TESTS% EQU 0 (
+  echo 🎉 All tests passed successfully!
+  endlocal
+  exit /b 0
+) else (
+  echo ❌ %FAILED_TESTS% test(s) failed
+  endlocal
+  exit /b 1
+)

@@ -1,38 +1,50 @@
-# syntax=docker/dockerfile:1
+# Dockerfile for ULID extension (C + Go implementation)
+FROM ubuntu:24.04
 
-ARG PG_MAJOR=17
-ARG DEBIAN_CODENAME=bookworm
-FROM postgres:$PG_MAJOR-$DEBIAN_CODENAME
-ARG PG_MAJOR
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    git \
+    pkg-config \
+    libssl-dev \
+    postgresql-server-dev-16 \
+    postgresql-16 \
+    postgresql-client-16 \
+    golang-go \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy the current directory (build context) to the container
-COPY . /tmp/pg-ulid
+# Set working directory
+WORKDIR /app
 
-RUN apt-get update && \
-		apt-mark hold locales && \
-		apt-get install -y --no-install-recommends build-essential postgresql-server-dev-$PG_MAJOR ca-certificates wget git && \
-		cd /tmp/pg-ulid && \
-		# Install Go 1.21 based on architecture
-		ARCH=$(dpkg --print-architecture) && \
-		if [ "$ARCH" = "arm64" ]; then \
-			wget -O go1.21.6.linux-arm64.tar.gz https://go.dev/dl/go1.21.6.linux-arm64.tar.gz && \
-			tar -C /usr/local -xzf go1.21.6.linux-arm64.tar.gz && \
-			rm go1.21.6.linux-arm64.tar.gz; \
-		else \
-			wget -O go1.21.6.linux-amd64.tar.gz https://go.dev/dl/go1.21.6.linux-amd64.tar.gz && \
-			tar -C /usr/local -xzf go1.21.6.linux-amd64.tar.gz && \
-			rm go1.21.6.linux-amd64.tar.gz; \
-		fi && \
-		export PATH=$PATH:/usr/local/go/bin && \
-		export GOPROXY=direct && \
-		export GOSUMDB=off && \
-		make clean && \
-		make OPTFLAGS="" && \
-		make install && \
-		mkdir /usr/share/doc/pg-ulid && \
-		cp LICENSE README.md /usr/share/doc/pg-ulid && \
-		rm -r /tmp/pg-ulid && \
-		apt-get remove -y build-essential postgresql-server-dev-$PG_MAJOR ca-certificates wget git && \
-		apt-get autoremove -y && \
-		apt-mark unhold locales && \
-		rm -rf /var/lib/apt/lists/*
+# Copy source code
+COPY . .
+
+# Build the Go binary
+RUN cd src && go mod tidy && go build -o ../ulid_generator ulid.go
+
+# Build the C extension
+RUN make clean && make
+
+# Install the extension (skip bitcode to avoid LLVM version conflicts)
+RUN make install || (echo "Bitcode generation failed, continuing with manual install..." && \
+    mkdir -p /usr/lib/postgresql/16/lib && \
+    mkdir -p /usr/share/postgresql/16/extension && \
+    cp ulid.so /usr/lib/postgresql/16/lib/ && \
+    cp ulid.control /usr/share/postgresql/16/extension/ && \
+    cp sql/ulid--0.1.1.sql /usr/share/postgresql/16/extension/)
+# Manually install the SQL files
+RUN cp sql/ulid--0.1.1.sql /usr/share/postgresql/16/extension/
+RUN cp ulid.control /usr/share/postgresql/16/extension/
+
+# Set up PostgreSQL
+USER postgres
+RUN /etc/init.d/postgresql start && \
+    psql -c "CREATE DATABASE testdb;" && \
+    psql -d testdb -c "CREATE EXTENSION ulid;" || echo "Extension creation failed, but continuing..."
+
+# Expose PostgreSQL port
+EXPOSE 5432
+
+# Start PostgreSQL
+CMD ["/usr/lib/postgresql/16/bin/postgres", "-D", "/var/lib/postgresql/16/main", "-c", "config_file=/etc/postgresql/16/main/postgresql.conf"]

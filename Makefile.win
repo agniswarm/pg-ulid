@@ -1,29 +1,36 @@
-# Makefile.win for ulid extension (nmake-friendly)
+# Makefile.win for ulid extension (C implementation, nmake-friendly)
 EXTENSION = ulid
-VERSION = 1.0.0
+VERSION = 0.1.1
 DATA = sql/$(EXTENSION)--$(VERSION).sql
 
+# C extension
+MODULE_big = ulid
+OBJS = src/ulid.obj
+
+# PostgreSQL configuration
+PG_CONFIG ?= pg_config
+PGXS := $(shell $(PG_CONFIG) --pgxs)
+
 # Default target
-all: ulid_generator.exe
+all: $(MODULE_big).dll
 
-# Build the Go binary
-ulid_generator.exe:
-	@echo Building Go binary...
-	@cd src && go mod download && go build -o ..\ulid_generator.exe .
+# Build the C extension
+$(MODULE_big).dll: $(OBJS)
+	@echo Building C extension...
+	@$(CC) /shared /export:PG_init /export:PG_fini $(OBJS) /Fe$(MODULE_big).dll
 
-# install-binary: call powershell script to copy exe into Postgres bindir (respects DESTDIR if set)
-install-binary: ulid_generator.exe
-	@echo Installing ulid_generator.exe to destination bindir (via scripts\install_windows.ps1)...
-	powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install_windows.ps1 "$(DESTDIR)"
+src/ulid.obj: src/ulid.c
+	@echo Compiling C source...
+	@$(CC) /c /I"$(shell $(PG_CONFIG) --includedir)" /I"$(shell $(PG_CONFIG) --includedir-server)" src/ulid.c /Fo$@
 
-# install: call powershell script to write substituted SQL into Postgres shared extension dir
-install: install-binary
-	@echo Installing SQL to Postgres shared extension directory (via scripts\install_sql_windows.ps1)...
-	powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install_sql_windows.ps1 "$(DESTDIR)" "$(DATA)" "$(EXTENSION)" "$(VERSION)"
-
-# Run Go tests
-test:
-	@cd test && go test -v ./...
+# Install the extension
+install: all
+	@echo Installing extension...
+	@if not exist "$(shell $(PG_CONFIG) --pkglibdir)" mkdir "$(shell $(PG_CONFIG) --pkglibdir)"
+	@copy $(MODULE_big).dll "$(shell $(PG_CONFIG) --pkglibdir)\"
+	@if not exist "$(shell $(PG_CONFIG) --sharedir)\extension" mkdir "$(shell $(PG_CONFIG) --sharedir)\extension"
+	@copy $(DATA) "$(shell $(PG_CONFIG) --sharedir)\extension\"
+	@copy ulid.control "$(shell $(PG_CONFIG) --sharedir)\extension\"
 
 # Windows installcheck: call Windows CI script if present
 installcheck:
@@ -32,18 +39,17 @@ installcheck:
 
 # Clean
 clean:
-	@if exist ulid_generator.exe del /Q ulid_generator.exe
-	@if exist src ( cd src && go clean )
-	@if exist test ( cd test && go clean -testcache )
+	@if exist src\*.obj del /Q src\*.obj
+	@if exist $(MODULE_big).dll del /Q $(MODULE_big).dll
+	@if exist $(MODULE_big).exp del /Q $(MODULE_big).exp
+	@if exist $(MODULE_big).lib del /Q $(MODULE_big).lib
 
 # Help
 help:
 	@echo Available targets:
 	@echo   all              - Build the extension (default)
-	@echo   install-binary  - Install the extension binary into Postgres bindir
-	@echo   install          - Install SQL into Postgres shared extension dir (uses pg_config)
-	@echo   test             - Run Go tests
+	@echo   install          - Install the extension into Postgres
 	@echo   installcheck     - Run Windows regression tests (requires test\build\ci.bat)
 	@echo   clean            - Clean build artifacts
 
-.PHONY: all install-binary install test installcheck clean help
+.PHONY: all install installcheck clean help

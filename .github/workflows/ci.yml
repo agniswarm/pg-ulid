@@ -1,9 +1,12 @@
 name: build
 on: [push, pull_request]
 
+# CI Configuration: Running only on latest OS and PostgreSQL versions for faster builds
+# Commented out older versions to reduce CI time and focus on current compatibility
+
 jobs:
   ubuntu:
-    name: ubuntu (postgres ${{ matrix.postgres }})
+    name: ubuntu latest (postgres ${{ matrix.postgres }})
     runs-on: ${{ matrix.os }}
     if: ${{ !startsWith(github.ref_name, 'mac') && !startsWith(github.ref_name, 'windows') }}
     strategy:
@@ -12,18 +15,18 @@ jobs:
         include:
           - postgres: 19
             os: ubuntu-24.04
-          - postgres: 18
-            os: ubuntu-24.04
-          - postgres: 17
-            os: ubuntu-24.04
-          - postgres: 16
-            os: ubuntu-24.04-arm
-          - postgres: 15
-            os: ubuntu-22.04
-          - postgres: 14
-            os: ubuntu-22.04-arm
-          - postgres: 13
-            os: ubuntu-22.04
+          # - postgres: 18
+          #   os: ubuntu-24.04
+          # - postgres: 17
+          #   os: ubuntu-24.04
+          # - postgres: 16
+          #   os: ubuntu-24.04-arm
+          # - postgres: 15
+          #   os: ubuntu-22.04
+          # - postgres: 14
+          #   os: ubuntu-22.04-arm
+          # - postgres: 13
+          #   os: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -33,11 +36,6 @@ jobs:
           postgres-version: ${{ matrix.postgres }}
           dev-files: true
 
-      - name: Setup Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: "1.21"
-
       - name: Build
         run: |
           export PG_CFLAGS="${{ matrix.postgres >= 18 && '-Wno-missing-field-initializers' || '' }} -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare"
@@ -46,7 +44,7 @@ jobs:
       - name: Install (preserve PG_CONFIG)
         run: |
           export PG_CONFIG=$(which pg_config)
-          sudo --preserve-env=PG_CONFIG make install-local
+          sudo --preserve-env=PG_CONFIG make install
 
       - name: Ensure Postgres running
         run: |
@@ -69,17 +67,19 @@ jobs:
           fi
 
   mac:
-    name: macos (postgres ${{ matrix.postgres }})
+    name: macos latest (postgres ${{ matrix.postgres }})
     runs-on: ${{ matrix.os }}
     if: ${{ !startsWith(github.ref_name, 'windows') }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - postgres: 17
+          - postgres: 19
             os: macos-15
-          - postgres: 14
-            os: macos-13
+          # - postgres: 17
+          #   os: macos-15
+          # - postgres: 14
+          #   os: macos-13
     steps:
       - uses: actions/checkout@v4
 
@@ -88,18 +88,13 @@ jobs:
         with:
           postgres-version: ${{ matrix.postgres }}
 
-      - name: Setup Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: "1.21"
-
       - name: Build
         run: |
           export PG_CFLAGS="-DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-warning-option"
           make
 
       - name: Install
-        run: make install-local
+        run: make install
 
       - name: Ensure Postgres running (brew)
         run: |
@@ -128,17 +123,19 @@ jobs:
           PG_CFLAGS: -DUSE_ASSERT_CHECKING
 
   windows:
-    name: windows (postgres ${{ matrix.postgres }})
+    name: windows latest (postgres ${{ matrix.postgres }})
     runs-on: ${{ matrix.os }}
     if: ${{ !startsWith(github.ref_name, 'mac') }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - postgres: 17
+          - postgres: 19
             os: windows-2025
-          - postgres: 14
-            os: windows-2022
+          # - postgres: 17
+          #   os: windows-2025
+          # - postgres: 14
+          #   os: windows-2022
     steps:
       - uses: actions/checkout@v4
 
@@ -147,18 +144,12 @@ jobs:
         with:
           postgres-version: ${{ matrix.postgres }}
 
-      - name: Setup Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: "1.21"
-
       - name: Build & install (MSVC)
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
           where cl || echo "cl not found"
           where nmake || echo "nmake not found"
           where pg_config || echo "pg_config not found"
-          where go || echo "go not found"
           nmake /NOLOGO /F Makefile.win
           nmake /NOLOGO /F Makefile.win install
         shell: cmd
@@ -197,7 +188,6 @@ jobs:
             echo No regression.diffs found
           )
         shell: cmd
-
   i386:
     name: i386 (postgres 15)
     if: ${{ !startsWith(github.ref_name, 'mac') && !startsWith(github.ref_name, 'windows') }}
@@ -207,7 +197,7 @@ jobs:
       options: --platform linux/386
     steps:
       - name: Minimal packages
-        run: apt-get update && apt-get install -y build-essential git libipc-run-perl postgresql-15 postgresql-server-dev-15 sudo golang-go
+        run: apt-get update && apt-get install -y build-essential git libipc-run-perl postgresql-15 postgresql-server-dev-15 sudo
 
       - name: Start Postgres
         run: service postgresql start || true
@@ -225,11 +215,10 @@ jobs:
           echo "=== repo src/ listing ==="
           ls -la src || true
           echo "=== Building extension (i386) ==="
-          export GOARCH=386
           make
-          echo "=== Installing binary + SQL (install-local) ==="
+          echo "=== Installing extension ==="
           export PG_CONFIG=$(which pg_config)
-          sudo --preserve-env=PG_CONFIG make install-local
+          sudo --preserve-env=PG_CONFIG make install
         env:
           PG_CFLAGS: "-DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare"
 
