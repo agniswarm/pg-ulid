@@ -1,89 +1,66 @@
 #
-# Makefile.win - nmake (MSVC) build for the ulid extension
+# Makefile.win - nmake for MSVC / Windows PostgreSQL extension build
 #
-# Usage (in Visual Studio Developer Command Prompt):
-#   set PGROOT=C:\Program Files\PostgreSQL\17
-#   nmake /F Makefile.win
-#   nmake /F Makefile.win install
-#   nmake /F Makefile.win installcheck
-#   nmake /F Makefile.win clean
+# Usage from Developer Command Prompt:
+#   set PGROOT="C:\Program Files\PostgreSQL\17"
+#   nmake /NOLOGO /F Makefile.win
+#   nmake /NOLOGO /F Makefile.win install
+#   nmake /NOLOGO /F Makefile.win installcheck
+#   nmake /NOLOGO /F Makefile.win clean
+#   nmake /NOLOGO /F Makefile.win uninstall
+#
+# Edit PGROOT if the installer placed PostgreSQL elsewhere.
 #
 
-# ---------- Configuration (change PGROOT env if necessary) ----------
-!IF "$(PGROOT)" == ""
-!ERROR PGROOT environment variable is not set. Set PGROOT to your Postgres installation root.
-!ENDIF
-
-BINDIR    = $(PGROOT)\bin
-INCLUDEDIR = $(PGROOT)\include
-INCLUDEDIR_SERVER = $(PGROOT)\include\server
-LIBDIR    = $(PGROOT)\lib
-SHAREDIR  = $(PGROOT)\share
-PKGLIBDIR = $(LIBDIR)
-
-CC        = cl
-LINKER    = link
+!if "%PGROOT%" == ""
+!error PGROOT environment variable must be set to your PostgreSQL install root (e.g. C:\Program Files\PostgreSQL\17)
+!endif
 
 EXTENSION = ulid
-EXTVERSION = 0.1.1
+MODULE = ulid
+SRC = src\ulid.c
+OBJ = src\ulid.obj
+SHLIB = $(MODULE).dll
+INCDIR = "$(PGROOT)\include\server"
+INCDIR_PORT = "$(PGROOT)\include\server\port\win32_msvc"
+LIBDIR = "$(PGROOT)\lib"
+PGREGRESS = "$(PGROOT)\lib\pgxs\src\test\regress\pg_regress"
 
-SRCDIR    = src
-OBJDIR    = src
-SRC       = $(SRCDIR)\ulid.c
-OBJ       = $(OBJDIR)\ulid.obj
-SHLIB     = $(EXTENSION).dll
-LIBS      = "$(LIBDIR)\postgres.lib"
+# Compiler flags - adjust as needed
+CFLAGS = /nologo /MD /O2 /W3 /DWIN32 /D_WINDOWS /I$(INCDIR_PORT) /I$(INCDIR)
+LDFLAGS = /nologo /DLL /OUT:$(SHLIB)
+LIBS = "$(LIBDIR)\postgres.lib"
 
-# Compiler flags similar to what PG uses for windows builds; adjust if your PG build differs.
-CFLAGS    = /nologo /MD /O2 /I"$(INCLUDEDIR_SERVER)\port\win32_msvc" /I"$(INCLUDEDIR_SERVER)\port\win32" /I"$(INCLUDEDIR_SERVER)" /I"$(INCLUDEDIR)"
-# Add any additional PG_CFLAGS here if necessary (but keep /W3 or /W4 as you prefer)
-# CFLAGS += $(PG_CFLAGS)
-
-# Link flags
-LFLAGS    = /nologo
-
-# ---------- Default target ----------
 all: $(SHLIB)
 
-# Compile source to object
 $(OBJ): $(SRC)
-	@echo Compiling $(SRC) -> $(OBJ)
-	$(CC) $(CFLAGS) /c $(SRC) /Fo$(OBJ)
+	cl $(CFLAGS) /c $(SRC) /Fo$(OBJ)
 
-# Link object into DLL
 $(SHLIB): $(OBJ)
-	@echo Linking $(SHLIB)
-	$(LINKER) $(LFLAGS) /DLL /OUT:$(SHLIB) $(OBJ) $(LIBS)
+	link $(LDFLAGS) $(OBJ) $(LIBS)
 
-# Install: copy DLL and SQL/control into PG lib and share dirs
 install: all
-	@echo Installing $(SHLIB) to $(PKGLIBDIR)
-	copy /Y "$(SHLIB)" "$(PKGLIBDIR)" || (echo Failed to copy DLL & exit /b 1)
-	@echo Installing extension control and SQL files to $(SHAREDIR)\extension
-	copy /Y "$(EXTENSION).control" "$(SHAREDIR)\extension" || (echo Failed to copy control file & exit /b 1)
-	copy /Y sql\$(EXTENSION)--*.sql "$(SHAREDIR)\extension" || (echo Failed to copy SQL file(s) & exit /b 1)
-	@echo Install complete.
+	if not exist "$(PGROOT)\lib" (echo PGROOT seems wrong & exit /b 1)
+	copy /Y $(SHLIB) "$(PGROOT)\lib" >nul
+	copy /Y $(EXTENSION).control "$(PGROOT)\share\extension" >nul
+	copy /Y sql\$(EXTENSION)--*.sql "$(PGROOT)\share\extension" >nul
+	@echo Installed $(SHLIB) to $(PGROOT)\lib
 
-# installcheck: attempt to run pg_regress if it exists (best-effort)
+# By request run test\build\ci.bat during installcheck (safer than pg_regress on some CI flows)
 installcheck:
-	@if exist "$(LIBDIR)\pgxs\src\test\regress\pg_regress" ( \
-		"$(LIBDIR)\pgxs\src\test\regress\pg_regress" --bindir="$(BINDIR)" --load-extension=$(EXTENSION) ulid_basic \
-	) else ( \
-		echo pg_regress not found at $(LIBDIR)\pgxs\src\test\regress\pg_regress && exit /b 0 \
-	)
+	if exist test\build\ci.bat ( \
+		echo Running test\build\ci.bat & call test\build\ci.bat ) else ( \
+		echo test\build\ci.bat not found - falling back to pg_regress & $(PGREGRESS) --bindir="$(PGROOT)\bin" ulid_basic )
 
-# Clean build artifacts
-clean:
-	-@if exist $(OBJ) del /F /Q $(OBJ)
-	-@if exist $(SHLIB) del /F /Q $(SHLIB)
-	-@if exist $(EXTENSION).lib del /F /Q $(EXTENSION).lib
-	-@if exist $(EXTENSION).exp del /F /Q $(EXTENSION).exp
-	@echo Cleaned.
-
-# Uninstall: remove installed files (best-effort; needs appropriate permissions)
 uninstall:
-	-@if exist "$(PKGLIBDIR)\$(SHLIB)" del /F /Q "$(PKGLIBDIR)\$(SHLIB)"
-	-@if exist "$(SHAREDIR)\extension\$(EXTENSION).control" del /F /Q "$(SHAREDIR)\extension\$(EXTENSION).control"
-	-@for %%f in ("$(SHAREDIR)\extension\$(EXTENSION)--*.sql") do ( if exist "%%~f" del /F /Q "%%~f" )
+	del /F /Q "$(PGROOT)\lib\$(SHLIB)" >nul 2>&1
+	del /F /Q "$(PGROOT)\share\extension\$(EXTENSION).control" >nul 2>&1
+	del /F /Q "$(PGROOT)\share\extension\$(EXTENSION)--*.sql" >nul 2>&1
+	@echo Uninstalled $(SHLIB) from $(PGROOT)
 
-.PHONY: all install installcheck clean uninstall
+clean:
+	-del /F /Q $(OBJ) >nul 2>&1
+	-del /F /Q $(SHLIB) >nul 2>&1
+	-del /F /Q regression.diffs regression.out >nul 2>&1
+
+.PHONY: all install installcheck uninstall clean

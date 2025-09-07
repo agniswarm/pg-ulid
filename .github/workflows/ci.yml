@@ -76,7 +76,7 @@ jobs:
           - postgres: 17
             os: windows-2025
           - postgres: 16
-            os: windows-2025
+            os: windows-2022
           - postgres: 14
             os: windows-2022
 

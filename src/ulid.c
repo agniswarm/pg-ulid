@@ -1,15 +1,15 @@
-/*
- * src/ulid.c
+/* src/ulid.c
  *
- * PostgreSQL ULID extension single-file implementation (cleaned, portable).
+ * Portable ULID PostgreSQL extension implementation.
  *
- * - Single definitions only (no duplicates).
- * - Portable 128-bit helpers (uses unsigned __int128 when available).
- * - Windows clock_gettime shim.
- * - Lossless Base32 encode/decode (26-char canonical, accepts 25/26 permissive).
+ * - Single PG_FUNCTION_INFO_V1 per exported function (fixes MSVC redefinition errors).
+ * - Portable Base32 encode/decode that doesn't require __uint128_t (works on MSVC).
+ * - Canonical 26-char ULID encode; accepts 25 or 26 char input permissively.
+ * - Lossless ulid <-> bytea and ulid <-> uuid copy (1:1) behavior.
  *
- * Build: normal PGXS Makefile. On Windows with MSVC you may need to set
- * appropriate include paths and link settings (see your Makefile.win).
+ * Notes:
+ * - This is intended to be compiled as a PostgreSQL extension module.
+ * - For production-quality random/entropy use, integrate a secure RNG (e.g. ulid-c).
  */
 
  #include "postgres.h"
@@ -36,262 +36,303 @@
  
  PG_MODULE_MAGIC;
  
- /* ----------------------- Portability helpers -------------------------
-    Provide a u128 abstraction (builtin unsigned __int128 when available,
-    otherwise a minimal struct) and a clock_gettime shim for Windows.
- --------------------------------------------------------------------- */
+ /* Forward prototypes (no PG_FUNCTION_INFO_V1 here) */
+ Datum ulid_in(PG_FUNCTION_ARGS);
+ Datum ulid_out(PG_FUNCTION_ARGS);
+ Datum ulid_send(PG_FUNCTION_ARGS);
+ Datum ulid_recv(PG_FUNCTION_ARGS);
+ Datum ulid_cmp(PG_FUNCTION_ARGS);
+ Datum ulid_generate(PG_FUNCTION_ARGS);
+ Datum ulid_generate_monotonic(PG_FUNCTION_ARGS);
+ Datum ulid_generate_with_timestamp(PG_FUNCTION_ARGS);
+ Datum ulid_timestamp(PG_FUNCTION_ARGS);
+ Datum ulid_to_uuid(PG_FUNCTION_ARGS);
+ Datum ulid_from_uuid(PG_FUNCTION_ARGS);
+ Datum ulid_hash(PG_FUNCTION_ARGS);
  
- #if defined(__SIZEOF_INT128__) || defined(__GNUC__) || defined(__clang__)
- typedef unsigned __int128 u128;
- static inline u128 u128_from_u64pair(uint64_t high, uint64_t low)
- {
-     u128 x = (u128)high;
-     x = (x << 64) | (u128)low;
-     return x;
- }
- static inline void u128_to_u64pair(u128 a, uint64_t *high, uint64_t *low)
- {
-     *high = (uint64_t)(a >> 64);
-     *low  = (uint64_t)a;
- }
- static inline u128 u128_shl(u128 a, unsigned n) { return a << n; }
- static inline u128 u128_shr(u128 a, unsigned n) { return a >> n; }
- static inline u128 u128_or(u128 a, u128 b) { return a | b; }
- #else
- typedef struct { uint64_t hi; uint64_t lo; } u128;
- static inline u128 u128_from_u64pair(uint64_t high, uint64_t low) { u128 r = {high, low}; return r; }
- static inline void u128_to_u64pair(u128 a, uint64_t *high, uint64_t *low) { *high = a.hi; *low = a.lo; }
- static inline u128 u128_or(u128 a, u128 b) { u128 r = {a.hi | b.hi, a.lo | b.lo}; return r; }
- static inline u128 u128_shl(u128 a, unsigned n)
- {
-     u128 out = {0,0};
-     if (n == 0) return a;
-     if (n < 64) {
-         out.hi = (a.hi << n) | (a.lo >> (64 - n));
-         out.lo = (a.lo << n);
-     } else if (n < 128) {
-         out.hi = (a.lo << (n - 64));
-         out.lo = 0;
-     }
-     return out;
- }
- static inline u128 u128_shr(u128 a, unsigned n)
- {
-     u128 out = {0,0};
-     if (n == 0) return a;
-     if (n < 64) {
-         out.lo = (a.lo >> n) | (a.hi << (64 - n));
-         out.hi = (a.hi >> n);
-     } else if (n < 128) {
-         out.lo = (a.hi >> (n - 64));
-         out.hi = 0;
-     }
-     return out;
- }
- #endif
+ Datum ulid_lt(PG_FUNCTION_ARGS);
+ Datum ulid_le(PG_FUNCTION_ARGS);
+ Datum ulid_eq(PG_FUNCTION_ARGS);
+ Datum ulid_ne(PG_FUNCTION_ARGS);
+ Datum ulid_ge(PG_FUNCTION_ARGS);
+ Datum ulid_gt(PG_FUNCTION_ARGS);
  
- /* helper: acc = (acc << 5) | (v5 & 0x1F) */
- static inline u128 u128_lshift_or_small(u128 acc, unsigned v5)
+ /* ULID type: 16 bytes */
+ typedef struct ULID
  {
- #if defined(__SIZEOF_INT128__) || defined(__GNUC__) || defined(__clang__)
-     acc = u128_shl(acc, 5);
-     acc = u128_or(acc, (u128)(v5 & 0x1F));
-     return acc;
- #else
-     u128 small = u128_from_u64pair(0, (uint64_t)(v5 & 0x1F));
-     u128 shifted = u128_shl(acc, 5);
-     return u128_or(shifted, small);
- #endif
- }
+     unsigned char data[16];
+ } ULID;
  
- /* Windows clock_gettime shim (if needed) */
- #if defined(_WIN32) && !defined(__MINGW32__)
- #include <windows.h>
- #ifndef CLOCK_REALTIME
- #define CLOCK_REALTIME 0
- #endif
- static int clock_gettime_win(int clk_id, struct timespec *ts)
- {
-     (void)clk_id;
-     FILETIME ft;
-     HMODULE h = GetModuleHandleW(L"Kernel32.dll");
-     if (h) {
-         typedef VOID (WINAPI *GSPAFT)(LPFILETIME);
-         GSPAFT p = (GSPAFT)GetProcAddress(h, "GetSystemTimePreciseAsFileTime");
-         if (p) {
-             p(&ft);
-         } else {
-             GetSystemTimeAsFileTime(&ft);
-         }
-     } else {
-         GetSystemTimeAsFileTime(&ft);
-     }
-     unsigned long long v = (((unsigned long long)ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
-     const unsigned long long EPOCH_DIFF = 11644473600ULL;
-     unsigned long long usec = (v / 10ULL) - (EPOCH_DIFF * 1000000ULL);
-     ts->tv_sec  = (time_t)(usec / 1000000ULL);
-     ts->tv_nsec = (long)((usec % 1000000ULL) * 1000ULL);
-     return 0;
- }
- static int clock_gettime(int clk_id, struct timespec *ts) { return clock_gettime_win(clk_id, ts); }
- #endif
- 
- /* ----------------------- ULID implementation ------------------------- */
- 
- /* ULID internal representation */
- typedef struct ULID { unsigned char data[16]; } ULID;
- 
- /* Crockford base32 canonical alphabet (26 chars) */
+ /* Crockford Base32 alphabet (canonical) */
  static const char base32_alphabet[] = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
  #define ULID_TEXT_LEN 26
  
- /* permissive base32 value mapping */
+ /* permissive mapping of char -> 5-bit value */
  static int base32_val(char c)
  {
-     if (c >= '0' && c <= '9') return c - '0';
-     if (c >= 'a' && c <= 'z') c = c - 'a' + 'A';
-     if (c == 'I' || c == 'L') return 1;
-     if (c == 'O') return 0;
-     switch (c) {
-         case 'A': return 10; case 'B': return 11; case 'C': return 12; case 'D': return 13;
-         case 'E': return 14; case 'F': return 15; case 'G': return 16; case 'H': return 17;
-         case 'J': return 18; case 'K': return 19; case 'M': return 20; case 'N': return 21;
-         case 'P': return 22; case 'Q': return 23; case 'R': return 24; case 'S': return 25;
-         case 'T': return 26; case 'V': return 27; case 'W': return 28; case 'X': return 29;
-         case 'Y': return 30; case 'Z': return 31;
+     if (c >= '0' && c <= '9')
+         return c - '0';
+ 
+     if (c >= 'a' && c <= 'z')
+         c = c - 'a' + 'A';
+ 
+     if (c == 'I' || c == 'L')
+         return 1;
+     if (c == 'O')
+         return 0;
+ 
+     switch (c)
+     {
+         case 'A': return 10;
+         case 'B': return 11;
+         case 'C': return 12;
+         case 'D': return 13;
+         case 'E': return 14;
+         case 'F': return 15;
+         case 'G': return 16;
+         case 'H': return 17;
+         case 'J': return 18;
+         case 'K': return 19;
+         case 'M': return 20;
+         case 'N': return 21;
+         case 'P': return 22;
+         case 'Q': return 23;
+         case 'R': return 24;
+         case 'S': return 25;
+         case 'T': return 26;
+         case 'V': return 27;
+         case 'W': return 28;
+         case 'X': return 29;
+         case 'Y': return 30;
+         case 'Z': return 31;
          default: return -1;
      }
  }
  
- /* Decode text (25 or 26 chars) into 16 bytes (ULID). Returns true on success. */
+ /*
+  * Decode 25- or 26-char ULID text into 16 bytes.
+  * Uses three 64-bit words to accumulate up to 130 bits without __uint128_t.
+  * Returns true on success, false on invalid input.
+  */
  static bool decode_ulid_text_to_bytes(const char *input, ULID *out)
  {
      if (!input || !out) return false;
+ 
      size_t len = strlen(input);
      if (!(len == 25 || len == 26)) return false;
  
      int vals[26];
-     for (size_t i = 0; i < len; i++) {
+     for (size_t i = 0; i < len; i++)
+     {
          int v = base32_val(input[i]);
          if (v < 0) return false;
          vals[i] = v & 0x1F;
      }
  
-     u128 acc = u128_from_u64pair(0,0);
+     /* accumulator: acc[2] = most-significant, acc[0] least */
+     uint64_t acc[3] = {0,0,0};
  
-     if (len == 26) {
-         /* 26*5 = 130 bits, drop the lowest 2 bits after accumulation */
-         for (int i = 0; i < 26; i++) acc = u128_lshift_or_small(acc, vals[i]);
-         /* acc now contains 130-bit value in big-endian. Shift right by 2 to get 128-bit ULID */
- #if defined(__SIZEOF_INT128__) || defined(__GNUC__) || defined(__clang__)
-         acc = u128_shr(acc, 2);
-         uint64_t high = (uint64_t)(acc >> 64);
-         uint64_t low = (uint64_t)acc;
- #else
-         acc = u128_shr(acc, 2);
-         uint64_t high, low;
-         u128_to_u64pair(acc, &high, &low);
- #endif
-         uint64_t high_u64, low_u64;
-         u128_to_u64pair(acc, &high_u64, &low_u64);
-         for (int i = 0; i < 8; i++) out->data[i] = (unsigned char)((high_u64 >> (56 - i*8)) & 0xFF);
-         for (int i = 0; i < 8; i++) out->data[i+8] = (unsigned char)((low_u64 >> (56 - i*8)) & 0xFF);
-     } else {
-         /* 25*5 = 125 bits; shift left by 3 to make 128 bits */
-         for (int i = 0; i < 25; i++) acc = u128_lshift_or_small(acc, vals[i]);
-         acc = u128_shl(acc, 3); /* pad 3 zero bits on the right */
-         uint64_t high_u64, low_u64;
-         u128_to_u64pair(acc, &high_u64, &low_u64);
-         for (int i = 0; i < 8; i++) out->data[i] = (unsigned char)((high_u64 >> (56 - i*8)) & 0xFF);
-         for (int i = 0; i < 8; i++) out->data[i+8] = (unsigned char)((low_u64 >> (56 - i*8)) & 0xFF);
+     for (int i = 0; i < (int)len; i++)
+     {
+         /* left shift acc by 5 bits */
+         uint64_t carry2 = acc[1] >> 59;       /* top 5 bits of acc[1] go into acc[2] */
+         uint64_t carry1 = acc[0] >> 59;       /* top 5 bits of acc[0] go into acc[1] */
+         acc[2] = (acc[2] << 5) | carry2;
+         acc[1] = (acc[1] << 5) | carry1;
+         acc[0] = (acc[0] << 5) | (uint64_t)vals[i];
      }
-     return true;
+ 
+     if (len == 26)
+     {
+         /* We have 130 bits in acc (top bits in acc[2]). Discard lowest 2 bits (right shift by 2). */
+         uint64_t new_lo = (acc[0] >> 2) | (acc[1] << 62);
+         uint64_t mid = (acc[1] >> 2) | (acc[2] << 62);
+         uint64_t hi = (acc[2] >> 2);
+ 
+         /* Now hi:mid:new_lo holds top 128 bits (hi may be up to 2 bits), we extract 16 bytes from hi..new_lo */
+         uint8_t bytes[24]; /* temp */
+         /* Build 16 MSB bytes from hi (most significant 64), mid (next 64) */
+         uint64_t msb = hi;
+         uint64_t lsb = mid;
+         /* But since we lost acc[0] (lowest), need to combine mid and new_lo to produce low 64 */
+         uint64_t low64 = new_lo;
+         /* Actually, after right shift by 2: bits layout is:
+          *   hi (bits 127..64)
+          *   mid (bits 63..0)
+          * But because of how we shifted across 3 words, mid contains the middle 64 and new_lo is the least 64.
+          * We need the final 128-bit value as: top64 = (hi<<? | ...) ; easier approach below:
+          */
+         /* Simpler: reconstruct big 128 from acc after right shift using two 64-bit words: */
+         /* compute combined = ( (acc as 130-bit) >> 2 ) -> produce top64 (high) and low64 (low) */
+         uint64_t top64, low64_final;
+         /* We computed hi/mid/new_lo above but safer to compute top64 and low64_final as: */
+         top64 = (hi << 0) | 0; /* hi already upper bits */
+         low64_final = (mid);
+         /* But we lost some bits sitting in new_lo (lowest); actually mid holds the next 64 after shifting.
+            The correct mapping (after shift) is:
+            acc (before shift): [acc2 (high 66..), acc1, acc0 (low)]
+            after shift by 2:
+            high64 = ( (acc2 >> 2) )
+            low64  = ( (acc2 << 62) | (acc1 >> 2) ) ? This is getting error-prone in commentary.
+            To avoid mistakes, fallback to assembling a 128-bit array of bits by writing bytes explicitly below.
+         */
+ 
+         /* We'll instead create a 130-bit bit-stream array of 26 5-bit values and then emit bytes by filling a bit buffer.
+          * This avoids the trickiness above. Restart and implement this deterministic approach below.
+          */
+     }
+ 
+     /* Fallback streaming approach: build bytes by streaming bits from values array.
+      * This approach is straightforward and safe for both 25 and 26 lengths.
+      */
+     {
+         unsigned int bit_count = 0;
+         uint64_t buffer = 0;
+         int byte_idx = 0;
+         memset(out->data, 0, 16);
+ 
+         /* Process all values (len items). For a 25-char input we will pad with 3 zero bits at the end. For 26 we process all 26 and then drop the 2 lowest bits by ignoring after producing 16 bytes. */
+         for (int i = 0; i < (int)len; i++)
+         {
+             buffer = (buffer << 5) | (uint64_t)vals[i];
+             bit_count += 5;
+ 
+             while (bit_count >= 8 && byte_idx < 16)
+             {
+                 /* extract the top 8 bits */
+                 unsigned shift = (unsigned)(bit_count - 8);
+                 unsigned char b = (unsigned char)((buffer >> shift) & 0xFFULL);
+                 out->data[byte_idx++] = b;
+                 bit_count -= 8;
+                 /* mask buffer to remaining bits */
+                 if (shift == 0)
+                     buffer = 0;
+                 else
+                     buffer &= ((1ULL << shift) - 1ULL);
+             }
+         }
+ 
+         if (len == 25 && byte_idx < 16)
+         {
+             /* we have 125 bits emitted as bytes; pad with 3 zero bits (left shift) to reach 128 bits */
+             /* append three zero bits */
+             buffer = (buffer << 3);
+             bit_count += 3;
+             while (bit_count >= 8 && byte_idx < 16)
+             {
+                 unsigned shift = (unsigned)(bit_count - 8);
+                 unsigned char b = (unsigned char)((buffer >> shift) & 0xFFULL);
+                 out->data[byte_idx++] = b;
+                 bit_count -= 8;
+                 if (shift == 0)
+                     buffer = 0;
+                 else
+                     buffer &= ((1ULL << shift) - 1ULL);
+             }
+         }
+ 
+         /* For 26-char case, the streaming algorithm will produce 16 bytes and may leave leftover bits (two bits) in buffer which we ignore */
+         if (byte_idx != 16)
+         {
+             /* if we didn't fill 16 bytes, decoding failed */
+             return false;
+         }
+         return true;
+     }
  }
  
- /* Encode 16 bytes -> 26-char canonical ULID text into out_buffer (>=27 bytes) */
- static void encode_bytes_to_ulid_text(const ULID *in, char *out_buffer)
+ /*
+  * Encode 16 bytes into canonical 26-char ULID text.
+  * Approach: build a 128-bit big-endian accumulator using two uint64_t and then emit 26 5-bit groups by left-shifting by 2 (to form 130 bits).
+  */
+ static void encode_bytes_to_ulid_text(const ULID *in, char *out_buffer /* >= 27 bytes */)
  {
-     /* Build 128-bit big-endian integer then left-shift by 2 to make 130 bits */
-     u128 acc = u128_from_u64pair(0,0);
- #if defined(__SIZEOF_INT128__) || defined(__GNUC__) || defined(__clang__)
-     for (int i = 0; i < 16; i++) {
-         acc = u128_shl(acc, 8);
-         acc = u128_or(acc, (u128)in->data[i]);
-     }
-     acc = u128_shl(acc, 2); /* produce 130 bits, low 2 bits zero */
-     for (int i = 25; i >= 0; i--) {
-         unsigned v = (unsigned)(acc & (u128)0x1F);
+     /* build acc as two 64-bit words (big-endian) */
+     uint64_t high = 0;
+     uint64_t low = 0;
+     for (int i = 0; i < 8; i++)
+         high = (high << 8) | (uint64_t)in->data[i];
+     for (int i = 0; i < 8; i++)
+         low = (low << 8) | (uint64_t)in->data[8 + i];
+ 
+     /* combine into a 128-bit represented by high, low */
+     /* left-shift by 2 bits to create 130-bit stream where bottom 2 bits are zero */
+     uint64_t new_high = (high << 2) | (low >> 62);
+     uint64_t new_low = (low << 2);
+ 
+     /* emit 26 base32 chars from most-significant to least */
+     uint64_t acc_high = new_high;
+     uint64_t acc_low = new_low;
+ 
+     for (int i = 25; i >= 0; i--)
+     {
+         /* extract lowest 5 bits of the 130-bit value; to do that, take (acc_low & 0x1F), then shift right 5 across the 128-bit pair */
+         uint8_t v = (uint8_t)(acc_low & 0x1F);
          out_buffer[i] = base32_alphabet[v];
-         acc = u128_shr(acc, 5);
+         /* shift right by 5 bits across acc_high:acc_low */
+         uint64_t carry = acc_high & 0x1F;
+         acc_low = (acc_low >> 5) | (carry << (64 - 5));
+         acc_high = (acc_high >> 5);
      }
- #else
-     /* Build using the struct implementation */
-     u128 tmp = u128_from_u64pair(0,0);
-     for (int i = 0; i < 16; i++) {
-         /* shift left by 8 and OR next byte */
-         tmp = u128_shl(tmp, 8);
-         u128 b = u128_from_u64pair(0, in->data[i]);
-         tmp = u128_or(tmp, b);
-     }
-     tmp = u128_shl(tmp, 2);
-     for (int i = 25; i >= 0; i--) {
-         uint64_t hi, lo;
-         u128_to_u64pair(tmp, &hi, &lo);
-         unsigned v = (unsigned)(lo & 0x1F);
-         out_buffer[i] = base32_alphabet[v];
-         tmp = u128_shr(tmp, 5);
-     }
- #endif
      out_buffer[26] = '\0';
  }
  
- /* Generate ULID bytes: prefer GetCurrentTimestamp() to align with Postgres time semantics */
- static void generate_ulid_bytes(ULID *out)
+ /* Portable random generator for entropy bytes (fallback) */
+ static void fill_random_bytes(unsigned char *buf, int n)
  {
-     struct timespec ts;
- #if defined(_WIN32) && !defined(__MINGW32__)
-     clock_gettime(CLOCK_REALTIME, &ts); /* shim */
- #else
-     clock_gettime(CLOCK_REALTIME, &ts);
- #endif
-     uint64_t timestamp = (uint64_t)ts.tv_sec * 1000 + (uint64_t)(ts.tv_nsec / 1000000);
-     out->data[0] = (timestamp >> 40) & 0xFF;
-     out->data[1] = (timestamp >> 32) & 0xFF;
-     out->data[2] = (timestamp >> 24) & 0xFF;
-     out->data[3] = (timestamp >> 16) & 0xFF;
-     out->data[4] = (timestamp >> 8) & 0xFF;
-     out->data[5] = timestamp & 0xFF;
-     for (int i = 6; i < 16; i++) out->data[i] = (unsigned char)(random() & 0xFF);
+     /* Use rand() as fallback; production should use secure RNG. */
+     for (int i = 0; i < n; i++)
+     {
+         buf[i] = (unsigned char)(rand() & 0xFF);
+     }
  }
  
- /* Monotonic generator: maintains counter per-process and resets when ms advances */
+ /* Generate ULID bytes: timestamp ms + 10 bytes random */
+ static void generate_ulid_bytes(ULID *out)
+ {
+     int64_t timestamp_ms = (int64_t)(GetCurrentTimestamp() / 1000);
+     out->data[0] = (timestamp_ms >> 40) & 0xFF;
+     out->data[1] = (timestamp_ms >> 32) & 0xFF;
+     out->data[2] = (timestamp_ms >> 24) & 0xFF;
+     out->data[3] = (timestamp_ms >> 16) & 0xFF;
+     out->data[4] = (timestamp_ms >> 8) & 0xFF;
+     out->data[5] = timestamp_ms & 0xFF;
+ 
+     fill_random_bytes(&out->data[6], 10);
+ }
+ 
+ /* Monotonic generator bytes */
  static void generate_ulid_monotonic_bytes(ULID *out)
  {
      static int64_t last_time_ms = 0;
      static uint32_t counter = 0;
+ 
      int64_t current_time_ms = (int64_t)(GetCurrentTimestamp() / 1000);
  
-     if (current_time_ms > last_time_ms) {
+     if (current_time_ms > last_time_ms)
+     {
          last_time_ms = current_time_ms;
          counter = 0;
      }
-     /* fill timestamp */
+ 
      out->data[0] = (last_time_ms >> 40) & 0xFF;
      out->data[1] = (last_time_ms >> 32) & 0xFF;
      out->data[2] = (last_time_ms >> 24) & 0xFF;
      out->data[3] = (last_time_ms >> 16) & 0xFF;
      out->data[4] = (last_time_ms >> 8) & 0xFF;
      out->data[5] = last_time_ms & 0xFF;
-     /* monotonic counter in bytes 6..9 */
+ 
      counter++;
+ 
      out->data[6] = (counter >> 24) & 0xFF;
      out->data[7] = (counter >> 16) & 0xFF;
      out->data[8] = (counter >> 8) & 0xFF;
      out->data[9] = (counter) & 0xFF;
-     for (int i = 10; i < 16; i++) out->data[i] = (unsigned char)(random() & 0xFF);
+ 
+     fill_random_bytes(&out->data[10], 6);
  }
  
- /* Generate ULID with explicit timestamp (ms) */
+ /* Generate ULID with explicit timestamp ms */
  static void generate_ulid_with_ts_bytes(ULID *out, int64_t timestamp_ms)
  {
      out->data[0] = (timestamp_ms >> 40) & 0xFF;
@@ -299,8 +340,9 @@
      out->data[2] = (timestamp_ms >> 24) & 0xFF;
      out->data[3] = (timestamp_ms >> 16) & 0xFF;
      out->data[4] = (timestamp_ms >> 8) & 0xFF;
-     out->data[5] = (timestamp_ms) & 0xFF;
-     for (int i = 6; i < 16; i++) out->data[i] = (unsigned char)(random() & 0xFF);
+     out->data[5] = timestamp_ms & 0xFF;
+ 
+     fill_random_bytes(&out->data[6], 10);
  }
  
  /* Extract timestamp ms from ULID bytes */
@@ -316,122 +358,162 @@
      return (int64_t)ts;
  }
  
- /* ----------------------- PostgreSQL exports ------------------------- */
+ /* --------- PostgreSQL-exposed functions --------- */
  
- /* forward declarations (single set) */
- Datum ulid_in(PG_FUNCTION_ARGS);
- Datum ulid_out(PG_FUNCTION_ARGS);
- Datum ulid_send(PG_FUNCTION_ARGS);
- Datum ulid_recv(PG_FUNCTION_ARGS);
- Datum ulid_cmp(PG_FUNCTION_ARGS);
- Datum ulid_lt(PG_FUNCTION_ARGS);
- Datum ulid_le(PG_FUNCTION_ARGS);
- Datum ulid_eq(PG_FUNCTION_ARGS);
- Datum ulid_ne(PG_FUNCTION_ARGS);
- Datum ulid_ge(PG_FUNCTION_ARGS);
- Datum ulid_gt(PG_FUNCTION_ARGS);
- Datum ulid_generate(PG_FUNCTION_ARGS);
- Datum ulid_generate_monotonic(PG_FUNCTION_ARGS);
- Datum ulid_generate_with_timestamp(PG_FUNCTION_ARGS);
- Datum ulid_timestamp(PG_FUNCTION_ARGS);
- Datum ulid_to_uuid(PG_FUNCTION_ARGS);
- Datum ulid_from_uuid(PG_FUNCTION_ARGS);
- Datum ulid_hash(PG_FUNCTION_ARGS);
- 
- /* Input function: text -> ulid */
+ /* Input function */
  PG_FUNCTION_INFO_V1(ulid_in);
- Datum ulid_in(PG_FUNCTION_ARGS)
+ Datum
+ ulid_in(PG_FUNCTION_ARGS)
  {
      char *input = PG_GETARG_CSTRING(0);
      ULID *result = (ULID *) palloc(sizeof(ULID));
-     if (!decode_ulid_text_to_bytes(input, result)) {
+ 
+     if (!decode_ulid_text_to_bytes(input, result))
+     {
          ereport(ERROR,
                  (errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
                   errmsg("invalid input syntax for type ulid: \"%s\"", input)));
      }
+ 
      PG_RETURN_POINTER(result);
  }
  
- /* Output function: ulid -> text */
+ /* Output function */
  PG_FUNCTION_INFO_V1(ulid_out);
- Datum ulid_out(PG_FUNCTION_ARGS)
+ Datum
+ ulid_out(PG_FUNCTION_ARGS)
  {
      ULID *ulid = (ULID *) PG_GETARG_POINTER(0);
      char *result = (char *) palloc(ULID_TEXT_LEN + 1);
+ 
      encode_bytes_to_ulid_text(ulid, result);
+ 
      PG_RETURN_CSTRING(result);
  }
  
- /* Binary send: produce 16-byte bytea */
+ /* Binary send */
  PG_FUNCTION_INFO_V1(ulid_send);
- Datum ulid_send(PG_FUNCTION_ARGS)
+ Datum
+ ulid_send(PG_FUNCTION_ARGS)
  {
      ULID *ulid = (ULID *) PG_GETARG_POINTER(0);
      bytea *result = (bytea *) palloc(VARHDRSZ + 16);
+ 
      SET_VARSIZE(result, VARHDRSZ + 16);
      memcpy(VARDATA(result), ulid->data, 16);
+ 
      PG_RETURN_BYTEA_P(result);
  }
  
- /* Binary receive */
+ /* Binary recv */
  PG_FUNCTION_INFO_V1(ulid_recv);
- Datum ulid_recv(PG_FUNCTION_ARGS)
+ Datum
+ ulid_recv(PG_FUNCTION_ARGS)
  {
      StringInfo buf = (StringInfo) PG_GETARG_POINTER(0);
      ULID *result = (ULID *) palloc(sizeof(ULID));
+ 
      if (buf->len < 16)
          elog(ERROR, "invalid ULID binary data");
+ 
      memcpy(result->data, buf->data, 16);
+ 
      PG_RETURN_POINTER(result);
  }
  
- /* Comparison (memcmp of 16 bytes) */
+ /* Comparison (memcmp) */
  PG_FUNCTION_INFO_V1(ulid_cmp);
- Datum ulid_cmp(PG_FUNCTION_ARGS)
+ Datum
+ ulid_cmp(PG_FUNCTION_ARGS)
  {
      ULID *a = (ULID *) PG_GETARG_POINTER(0);
      ULID *b = (ULID *) PG_GETARG_POINTER(1);
+ 
      int cmp = memcmp(a->data, b->data, 16);
      if (cmp < 0) PG_RETURN_INT32(-1);
-     else if (cmp > 0) PG_RETURN_INT32(1);
-     else PG_RETURN_INT32(0);
+     if (cmp > 0) PG_RETURN_INT32(1);
+     PG_RETURN_INT32(0);
  }
  
  /* Boolean operators */
  PG_FUNCTION_INFO_V1(ulid_lt);
- Datum ulid_lt(PG_FUNCTION_ARGS) { ULID *a=(ULID*)PG_GETARG_POINTER(0); ULID *b=(ULID*)PG_GETARG_POINTER(1); PG_RETURN_BOOL(memcmp(a->data,b->data,16) < 0); }
- PG_FUNCTION_INFO_V1(ulid_le);
- Datum ulid_le(PG_FUNCTION_ARGS) { ULID *a=(ULID*)PG_GETARG_POINTER(0); ULID *b=(ULID*)PG_GETARG_POINTER(1); PG_RETURN_BOOL(memcmp(a->data,b->data,16) <= 0); }
- PG_FUNCTION_INFO_V1(ulid_eq);
- Datum ulid_eq(PG_FUNCTION_ARGS) { ULID *a=(ULID*)PG_GETARG_POINTER(0); ULID *b=(ULID*)PG_GETARG_POINTER(1); PG_RETURN_BOOL(memcmp(a->data,b->data,16) == 0); }
- PG_FUNCTION_INFO_V1(ulid_ne);
- Datum ulid_ne(PG_FUNCTION_ARGS) { ULID *a=(ULID*)PG_GETARG_POINTER(0); ULID *b=(ULID*)PG_GETARG_POINTER(1); PG_RETURN_BOOL(memcmp(a->data,b->data,16) != 0); }
- PG_FUNCTION_INFO_V1(ulid_ge);
- Datum ulid_ge(PG_FUNCTION_ARGS) { ULID *a=(ULID*)PG_GETARG_POINTER(0); ULID *b=(ULID*)PG_GETARG_POINTER(1); PG_RETURN_BOOL(memcmp(a->data,b->data,16) >= 0); }
- PG_FUNCTION_INFO_V1(ulid_gt);
- Datum ulid_gt(PG_FUNCTION_ARGS) { ULID *a=(ULID*)PG_GETARG_POINTER(0); ULID *b=(ULID*)PG_GETARG_POINTER(1); PG_RETURN_BOOL(memcmp(a->data,b->data,16) > 0); }
+ Datum
+ ulid_lt(PG_FUNCTION_ARGS)
+ {
+     ULID *a = (ULID *) PG_GETARG_POINTER(0);
+     ULID *b = (ULID *) PG_GETARG_POINTER(1);
+     PG_RETURN_BOOL(memcmp(a->data, b->data, 16) < 0);
+ }
  
- /* Random ULID generator (ulid()) */
+ PG_FUNCTION_INFO_V1(ulid_le);
+ Datum
+ ulid_le(PG_FUNCTION_ARGS)
+ {
+     ULID *a = (ULID *) PG_GETARG_POINTER(0);
+     ULID *b = (ULID *) PG_GETARG_POINTER(1);
+     PG_RETURN_BOOL(memcmp(a->data, b->data, 16) <= 0);
+ }
+ 
+ PG_FUNCTION_INFO_V1(ulid_eq);
+ Datum
+ ulid_eq(PG_FUNCTION_ARGS)
+ {
+     ULID *a = (ULID *) PG_GETARG_POINTER(0);
+     ULID *b = (ULID *) PG_GETARG_POINTER(1);
+     PG_RETURN_BOOL(memcmp(a->data, b->data, 16) == 0);
+ }
+ 
+ PG_FUNCTION_INFO_V1(ulid_ne);
+ Datum
+ ulid_ne(PG_FUNCTION_ARGS)
+ {
+     ULID *a = (ULID *) PG_GETARG_POINTER(0);
+     ULID *b = (ULID *) PG_GETARG_POINTER(1);
+     PG_RETURN_BOOL(memcmp(a->data, b->data, 16) != 0);
+ }
+ 
+ PG_FUNCTION_INFO_V1(ulid_ge);
+ Datum
+ ulid_ge(PG_FUNCTION_ARGS)
+ {
+     ULID *a = (ULID *) PG_GETARG_POINTER(0);
+     ULID *b = (ULID *) PG_GETARG_POINTER(1);
+     PG_RETURN_BOOL(memcmp(a->data, b->data, 16) >= 0);
+ }
+ 
+ PG_FUNCTION_INFO_V1(ulid_gt);
+ Datum
+ ulid_gt(PG_FUNCTION_ARGS)
+ {
+     ULID *a = (ULID *) PG_GETARG_POINTER(0);
+     ULID *b = (ULID *) PG_GETARG_POINTER(1);
+     PG_RETURN_BOOL(memcmp(a->data, b->data, 16) > 0);
+ }
+ 
+ /* Generate random ULID */
  PG_FUNCTION_INFO_V1(ulid_generate);
- Datum ulid_generate(PG_FUNCTION_ARGS)
+ Datum
+ ulid_generate(PG_FUNCTION_ARGS)
  {
      ULID *result = (ULID *) palloc(sizeof(ULID));
      generate_ulid_bytes(result);
      PG_RETURN_POINTER(result);
  }
  
- /* Monotonic generator wrapper (ulid_generate_monotonic) */
+ /* Monotonic generator */
  PG_FUNCTION_INFO_V1(ulid_generate_monotonic);
- Datum ulid_generate_monotonic(PG_FUNCTION_ARGS)
+ Datum
+ ulid_generate_monotonic(PG_FUNCTION_ARGS)
  {
      ULID *result = (ULID *) palloc(sizeof(ULID));
      generate_ulid_monotonic_bytes(result);
      PG_RETURN_POINTER(result);
  }
  
- /* Generator with explicit timestamp (ms) */
+ /* Generate ULID with given timestamp (ms) */
  PG_FUNCTION_INFO_V1(ulid_generate_with_timestamp);
- Datum ulid_generate_with_timestamp(PG_FUNCTION_ARGS)
+ Datum
+ ulid_generate_with_timestamp(PG_FUNCTION_ARGS)
  {
      int64_t timestamp_ms = PG_GETARG_INT64(0);
      ULID *result = (ULID *) palloc(sizeof(ULID));
@@ -439,18 +521,20 @@
      PG_RETURN_POINTER(result);
  }
  
- /* Extract timestamp (ms) from ULID */
+ /* Extract timestamp ms */
  PG_FUNCTION_INFO_V1(ulid_timestamp);
- Datum ulid_timestamp(PG_FUNCTION_ARGS)
+ Datum
+ ulid_timestamp(PG_FUNCTION_ARGS)
  {
      ULID *ulid = (ULID *) PG_GETARG_POINTER(0);
      int64_t ts = extract_timestamp_ms_from_ulid_bytes(ulid);
      PG_RETURN_INT64((int64)ts);
  }
  
- /* ULID <-> UUID mapping: lossless 1:1 byte copy (note: UUID won't be RFC-4122 conforming) */
+ /* Lossless ulid -> uuid (copy bytes) */
  PG_FUNCTION_INFO_V1(ulid_to_uuid);
- Datum ulid_to_uuid(PG_FUNCTION_ARGS)
+ Datum
+ ulid_to_uuid(PG_FUNCTION_ARGS)
  {
      ULID *ulid = (ULID *) PG_GETARG_POINTER(0);
      pg_uuid_t *uuid = (pg_uuid_t *) palloc(UUID_LEN);
@@ -458,8 +542,10 @@
      PG_RETURN_UUID_P(uuid);
  }
  
+ /* Lossless uuid -> ulid (copy bytes) */
  PG_FUNCTION_INFO_V1(ulid_from_uuid);
- Datum ulid_from_uuid(PG_FUNCTION_ARGS)
+ Datum
+ ulid_from_uuid(PG_FUNCTION_ARGS)
  {
      pg_uuid_t *uuid = (pg_uuid_t *) PG_GETARG_POINTER(0);
      ULID *result = (ULID *) palloc(sizeof(ULID));
@@ -467,14 +553,16 @@
      PG_RETURN_POINTER(result);
  }
  
- /* Hash */
+ /* Hash function */
  PG_FUNCTION_INFO_V1(ulid_hash);
- Datum ulid_hash(PG_FUNCTION_ARGS)
+ Datum
+ ulid_hash(PG_FUNCTION_ARGS)
  {
      ULID *ulid = (ULID *) PG_GETARG_POINTER(0);
-     uint32_t hash = 0;
-     for (int i = 0; i < 16; i++) hash = hash * 31 + ulid->data[i];
-     PG_RETURN_INT32((int32_t)hash);
+     uint32_t h = 0;
+     for (int i = 0; i < 16; i++)
+         h = h * 31 + ulid->data[i];
+     PG_RETURN_INT32((int32_t)h);
  }
  
  /* end of file */
