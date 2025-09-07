@@ -30,7 +30,6 @@ jobs:
           - os: windows-2022
             pg: 14
     
-            
     name: PostgreSQL ${{ matrix.pg }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     
