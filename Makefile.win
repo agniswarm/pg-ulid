@@ -1,8 +1,9 @@
-EXTENSION = ulid
-EXTVERSION = 0.1.1
+EXTENSION = vector
+EXTVERSION = 0.8.1
 
 DATA_built = sql\$(EXTENSION)--$(EXTVERSION).sql
 OBJS = src\ulid.obj
+
 
 REGRESS = ulid_basic
 REGRESS_OPTS = --load-extension=$(EXTENSION)

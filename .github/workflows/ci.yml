@@ -15,11 +15,11 @@ jobs:
           - postgres: 17
             os: ubuntu-24.04
           - postgres: 16
-            os: ubuntu-22.04
+            os: ubuntu-24.04-arm
           - postgres: 15
             os: ubuntu-22.04
           - postgres: 14
-            os: ubuntu-22.04
+            os: ubuntu-22.04-arm
           - postgres: 13
             os: ubuntu-22.04
     steps:
@@ -28,7 +28,10 @@ jobs:
         with:
           postgres-version: ${{ matrix.postgres }}
           dev-files: true
-      - run: make
+      - run: |
+          make clean || true
+          rm -f src/*.o src/*.bc || true
+          make
         env:
           PG_CFLAGS: ${{ matrix.postgres >= 18 && '-Wno-missing-field-initializers' || '' }} -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare
       - run: |
@@ -48,7 +51,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Test latest supported versions on macOS
           - postgres: 17
+            os: macos-15
+          - postgres: 16
             os: macos-15
           - postgres: 14
             os: macos-13
@@ -83,7 +89,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Test latest supported versions on Windows
           - postgres: 17
+            os: windows-2025
+          - postgres: 16
             os: windows-2025
           - postgres: 14
             os: windows-2022
@@ -109,7 +118,7 @@ jobs:
       image: debian:12
       options: --platform linux/386
     steps:
-      - run: apt-get update && apt-get install -y build-essential git libipc-run-perl postgresql-15 postgresql-server-dev-15 sudo
+      - run: apt-get update && apt-get install -y build-essential git libipc-run-perl postgresql-16 postgresql-server-dev-16 sudo
       - run: service postgresql start
       - run: |
           git clone https://github.com/${{ github.repository }}.git pg-ulid
