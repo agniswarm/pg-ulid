@@ -14,10 +14,23 @@ PG_CONFIG ?= pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 
 # Disable bitcode generation to avoid LLVM version conflicts
-PG_CPPFLAGS += -fno-lto
-PG_CFLAGS += -fno-lto
+# Force regular object file compilation instead of bitcode
+PG_CPPFLAGS += -fno-lto -fno-fat-lto-objects
+PG_CFLAGS += -fno-lto -fno-fat-lto-objects
+PG_LDFLAGS += -fno-lto -fno-fat-lto-objects
+
+# Override compilation to force regular object files
+CC = gcc
+
+# Force disable LTO at the makefile level
+override CFLAGS += -fno-lto -fno-fat-lto-objects
+override LDFLAGS += -fno-lto -fno-fat-lto-objects
 
 include $(PGXS)
+
+# Override the object file compilation to ensure regular .o files
+src/ulid.o: src/ulid.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
 # Clean targets
 clean:

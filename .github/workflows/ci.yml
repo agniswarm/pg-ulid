@@ -39,6 +39,8 @@ jobs:
       - name: Build
         run: |
           export PG_CFLAGS="${{ matrix.postgres >= 18 && '-Wno-missing-field-initializers' || '' }} -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare"
+          make clean || true
+          rm -f src/*.o src/*.bc || true
           make
 
       - name: Install (preserve PG_CONFIG)
