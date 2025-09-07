@@ -14,7 +14,7 @@ REGRESS =
 PG_CONFIG ?= pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs 2>/dev/null || true)
 ifeq ($(PGXS),)
-$(error "pg_config not found or PGXS not available. Install PostgreSQL dev packages or set PG_CONFIG")
+$(error "pg_config not found or PGXS not available. Install PostgreSQL dev packages or set PG_CONFIG. PATH: $(PATH)")
 endif
 
 include $(PGXS)
