@@ -1,17 +1,55 @@
-EXTENSION = vector
-EXTVERSION = 0.8.1
+# Makefile.win - flexible Windows build for the ulid extension
+#
+# Supports:
+#  - MSVC (cl) via nmake
+#  - clang-cl (recommended if your C uses __uint128_t)
+#  - MinGW/GCC (if running in MSYS/MinGW)
+#
+# Usage examples:
+#  nmake /F Makefile.win                 (uses cl if available)
+#  nmake /F Makefile.win CC=clang-cl     (use clang-cl front-end)
+#  make -f Makefile.win CC=gcc           (use MinGW/MSYS gcc)
+#
+# Notes:
+#  - If your C sources use __uint128_t, prefer CC=clang-cl or MinGW-w64 GCC.
+#  - If using MSVC cl and your code uses GCC extensions, you'll need to port the C
+#    code (e.g. emulate 128-bit or provide alternative routines).
+#
+# Edit PGROOT environment variable (or ensure it is set by your environment).
+#
 
+EXTENSION = ulid
+EXTVERSION = 0.1.1
+
+# data target (keeps parity to your existing Windows makefile)
 DATA_built = sql\$(EXTENSION)--$(EXTVERSION).sql
+
+# default object(s) - will be adapted if ULID_C_DIR provided
 OBJS = src\ulid.obj
 
+# Optional: compile/link aperezdc/ulid-c sources into extension on Windows
+# Example: nmake /F Makefile.win ULID_C_DIR=C:\dev\ulid-c
+ULID_C_DIR =
+!ifeq ($(ULID_C_DIR),)
+  # transform C files into object names under src\ (namespace to avoid clashes)
+  ULID_C_SRCS = $(wildcard $(ULID_C_DIR)\*.c)
+  # create object names: C:\path\foo.c -> src\ulidc_foo.obj
+  # Simple pattern: rely on file names without path
+  ULID_C_OBJS =
+  !for %f in ($(ULID_C_SRCS))
+  !  cmd /c "echo %~nxf" >nul 2>nul
+  !  # We will append objects in the build rule generation below
+  !endfor
+!endif
 
 REGRESS = ulid_basic
 REGRESS_OPTS = --load-extension=$(EXTENSION)
 
-# TODO use pg_config
+# Ensure PGROOT is set (mimic your original file's behavior)
 !ifndef PGROOT
-!error PGROOT is not set
+!error PGROOT is not set - set PGROOT to your PostgreSQL installation root (e.g. C:\Program Files\PostgreSQL\17)
 !endif
+
 BINDIR = $(PGROOT)\bin
 INCLUDEDIR = $(PGROOT)\include
 INCLUDEDIR_SERVER = $(PGROOT)\include\server
@@ -19,43 +57,142 @@ LIBDIR = $(PGROOT)\lib
 PKGLIBDIR = $(PGROOT)\lib
 SHAREDIR = $(PGROOT)\share
 
-# Use $(PGROOT)\bin\pg_regress for Postgres < 17
-PG_REGRESS = $(LIBDIR)\pgxs\src\test\regress\pg_regress
+# default compiler - prefer environment override
+!ifndef CC
+CC = cl
+!else
+CC = $(CC)
+!endif
 
-CFLAGS = /nologo /I"$(INCLUDEDIR_SERVER)\port\win32_msvc" /I"$(INCLUDEDIR_SERVER)\port\win32" /I"$(INCLUDEDIR_SERVER)" /I"$(INCLUDEDIR)"
+# Detect if using MSVC cl (case-insensitive)
+!if "$(CC)" == "cl"
+MSVC_BUILD = 1
+!else
+MSVC_BUILD = 0
+!endif
 
-CFLAGS = $(CFLAGS) $(PG_CFLAGS)
+# Basic flags. We'll choose CL style or GCC style depending on CC.
+# Common include flags for Postgres server headers
+MSVC_INCLUDES = /I"$(INCLUDEDIR_SERVER)\port\win32_msvc" /I"$(INCLUDEDIR_SERVER)\port\win32" /I"$(INCLUDEDIR_SERVER)" /I"$(INCLUDEDIR)"
+GCC_INCLUDES = -I"$(INCLUDEDIR_SERVER)\port\win32_msvc" -I"$(INCLUDEDIR_SERVER)\port\win32" -I"$(INCLUDEDIR_SERVER)" -I"$(INCLUDEDIR)"
 
-SHLIB = $(EXTENSION).dll
+# PG_CFLAGS can be provided by environment (from pg_config); otherwise leave empty
+!ifndef PG_CFLAGS
+PG_CFLAGS =
+!endif
 
-LIBS = "$(LIBDIR)\postgres.lib"
+# Compose final CFLAGS and link libs based on compiler type
+!if "$(MSVC_BUILD)" == "1"
+  # MSVC flags
+  CFLAGS = /nologo $(MSVC_INCLUDES) $(PG_CFLAGS)
+  LDFLAGS = /nologo
+  SHLIB = $(EXTENSION).dll
+  LIBS = "$(LIBDIR)\postgres.lib"
+else
+  # GCC/Clang flags (MinGW or clang-cl invoking gcc-style flags)
+  CFLAGS = -fvisibility=hidden $(GCC_INCLUDES) $(PG_CFLAGS)
+  LDFLAGS =
+  SHLIB = $(EXTENSION).dll
+  LIBS = -L"$(LIBDIR)" -lpostgres
+endif
 
+# Rules - aim to support both nmake (MSVC) and GNU make (MinGW/MSYS)
 all: $(SHLIB) $(DATA_built)
 
+# Generic compile rule for MSVC or GCC, using CC variable
 .c.obj:
+ifeq ($(MSVC_BUILD),1)
 	$(CC) $(CFLAGS) /c $< /Fo$@
+else
+	$(CC) $(CFLAGS) -c $< -o $@
+endif
 
+# Default link using cl or gcc/ld frontends
 $(SHLIB): $(OBJS)
+ifeq ($(MSVC_BUILD),1)
 	$(CC) $(CFLAGS) $(OBJS) $(LIBS) /link /DLL /OUT:$(SHLIB)
+else
+	$(CC) $(CFLAGS) $(OBJS) $(LIBS) -shared -o $(SHLIB)
+endif
+
+# If ULID_C_DIR provided: produce object files for each .c in that dir
+# (This block is intentionally simple; path quoting/complex patterns may require adapting)
+!ifndef ULID_C_DIR
+# no ULID_C_DIR - nothing to do
+!else
+ULID_C_SRCS = $(wildcard $(ULID_C_DIR)\*.c)
+# generate object names like src\ulidc_<basename>.obj
+ULID_C_OBJS =
+!for %%F in ($(ULID_C_SRCS))
+  ULID_C_OBJS = $(ULID_C_OBJS) src\ulidc_%%~nF.obj
+!endfor
+OBJS = $(OBJS) $(ULID_C_OBJS)
+
+# rules to compile each ulidc_*.c
+!for %%F in ($(ULID_C_SRCS))
+src\ulidc_%%~nF.obj: $(ULID_C_DIR)\%%~nxF
+ifeq ($(MSVC_BUILD),1)
+	$(CC) $(CFLAGS) /c $(ULID_C_DIR)\%%~nxF /Fo$@
+else
+	$(CC) $(CFLAGS) -I"$(ULID_C_DIR)" -c $(ULID_C_DIR)/%%~nxF -o $@
+endif
+!endfor
+!endif
 
 sql\$(EXTENSION)--$(EXTVERSION).sql: sql\$(EXTENSION)--$(EXTVERSION).sql
 	@rem File already exists
 
 install: all
+ifeq ($(MSVC_BUILD),1)
 	copy $(SHLIB) "$(PKGLIBDIR)"
 	copy $(EXTENSION).control "$(SHAREDIR)\extension"
 	copy sql\$(EXTENSION)--*.sql "$(SHAREDIR)\extension"
+else
+	cp $(SHLIB) "$(PKGLIBDIR)"
+	cp $(EXTENSION).control "$(SHAREDIR)\extension"
+	cp sql/$(EXTENSION)--*.sql "$(SHAREDIR)/extension"
+endif
 
 installcheck:
 	"$(PG_REGRESS)" --bindir="$(BINDIR)" $(REGRESS_OPTS) $(REGRESS)
 
 uninstall:
+ifeq ($(MSVC_BUILD),1)
 	del /f "$(PKGLIBDIR)\$(SHLIB)"
 	del /f "$(SHAREDIR)\extension\$(EXTENSION).control"
 	del /f "$(SHAREDIR)\extension\$(EXTENSION)--*.sql"
+else
+	rm -f "$(PKGLIBDIR)/$(SHLIB)"
+	rm -f "$(SHAREDIR)/extension/$(EXTENSION).control"
+	rm -f "$(SHAREDIR)/extension/$(EXTENSION)--*.sql"
+endif
 
 clean:
+ifeq ($(MSVC_BUILD),1)
 	del /f $(SHLIB) $(EXTENSION).lib $(EXTENSION).exp
 	del /f $(DATA_built)
 	del /f $(OBJS)
 	del /f /s /q results regression.diffs regression.out tmp_check tmp_check_iso log output_iso
+else
+	rm -f $(SHLIB) $(EXTENSION).lib $(EXTENSION).exp
+	rm -f $(DATA_built)
+	rm -f $(OBJS)
+	rm -f results regression.diffs regression.out tmp_check tmp_check_iso log output_iso || true
+endif
+
+# Helpful notes target
+help:
+	@echo.
+	@echo "Makefile.win targets and usage tips"
+	@echo.
+	@echo "  nmake /F Makefile.win             -> build with MSVC cl (default)"
+	@echo "  nmake /F Makefile.win CC=clang-cl -> build with clang-cl (recommended if C uses __uint128_t)"
+	@echo "  make -f Makefile.win CC=gcc       -> build with MinGW-w64 GCC (run in MSYS/MinGW)"
+	@echo.
+	@echo "Notes:"
+	@echo " - If your C code uses __uint128_t (GCC/Clang builtin), prefer clang-cl or MinGW GCC."
+	@echo " - If using MSVC cl you may need to patch the C source to avoid __uint128_t and POSIX calls (clock_gettime)."
+	@echo " - To compile/link ulid-c into the extension: nmake /F Makefile.win ULID_C_DIR=C:\\path\\to\\ulid-c"
+	@echo.
+
+.PHONY: all install installcheck uninstall clean help
