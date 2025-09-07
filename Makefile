@@ -52,7 +52,6 @@ install-local: all
 		exit 2; \
 	fi
 	install -d -m 0755 $(DESTDIR)$(datadir)/extension
-	# substitute @BINDIR@ token in provided SQL (if present)
 	sed "s|@BINDIR@|$(bindir)|g" "$(DATA)" > "$(DESTDIR)$(datadir)/extension/$(notdir $(DATA))"
 	if [ -f "$(EXTENSION).control" ]; then \
 	  install -m 0644 "$(EXTENSION).control" "$(DESTDIR)$(datadir)/extension/"; \
@@ -60,6 +59,8 @@ install-local: all
 	  echo "Warning: $(EXTENSION).control not found in repo (install-local continues)"; \
 	fi
 	@echo "install-local: done"
+
+.PHONY: install-local
 
 # Standard PGXS install target (when using `make install` with PG_CONFIG set)
 # PGXS supplies 'install' and 'installcheck' targets; we don't override them here.
