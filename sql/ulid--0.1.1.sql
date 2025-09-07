@@ -116,7 +116,7 @@ LANGUAGE C VOLATILE;
 -- Define utility functions
 CREATE OR REPLACE FUNCTION ulid_timestamp(ulid)
 RETURNS bigint
-AS 'MODULE_PATHNAME', 'ulid_timestamp_fn'
+AS 'MODULE_PATHNAME', 'ulid_timestamp'
 LANGUAGE C IMMUTABLE STRICT;
 
 CREATE OR REPLACE FUNCTION ulid_to_uuid(ulid)
