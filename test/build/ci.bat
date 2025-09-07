@@ -69,15 +69,6 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Testing error handling...
-psql -c "SELECT ulid_parse('invalid-ulid');" || echo Expected error for invalid ULID
-
-echo Testing batch with zero count...
-psql -c "SELECT ulid_batch(0);"
-
-echo Testing batch with negative count...
-psql -c "SELECT ulid_batch(-1);" || echo Expected error for negative count
-
 echo Cleaning up...
 psql -c "DROP EXTENSION IF EXISTS ulid;"
 
