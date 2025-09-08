@@ -1,63 +1,73 @@
 #
-# Makefile.win - Windows build for PostgreSQL ULID extension
+# Makefile.win - nmake compatible build for PostgreSQL ULID extension
 #
-# Designed to work with nmake (Microsoft Make) on Windows
+# Requirements:
+#   - Environment variable PGXS must be set to full path of pgxs.mk BEFORE running nmake.
+#     Example PGXS: C:\Program Files\PostgreSQL\15\lib\postgresql\pgxs\src\makefiles\pgxs.mk
 #
-
 EXTENSION = ulid
 EXTVERSION = 0.1.1
 
 MODULE_big = $(EXTENSION)
-OBJS = src\ulid.o
+OBJS = src\ulid.obj
 DATA = $(EXTENSION).control sql\$(EXTENSION)--$(EXTVERSION).sql
-REGRESS = 
+REGRESS =
 
-# Use PGXS for building
-PG_CONFIG ?= pg_config
+# nmake cannot execute shell during parse-time. PGXS must be supplied externally.
+PG_CONFIG = pg_config
 
-# Get PGXS path
-PGXS = $(shell $(PG_CONFIG) --pgxs 2>nul)
+!IF "$(PGXS)" == ""
+!ERROR "PGXS not set. Please set environment variable PGXS to the full path of pgxs.mk (e.g. C:\Program Files\PostgreSQL\15\lib\postgresql\pgxs\src\makefiles\pgxs.mk)."
+!ENDIF
 
-# Include PGXS if available
-!if "$(PGXS)" != ""
-!include $(PGXS)
-!else
-!error "PGXS not available from pg_config ($(PG_CONFIG)). Please ensure PostgreSQL development files are installed."
-!endif
+!INCLUDE $(PGXS)
 
-# Optional: point to ulid-c include/lib if you want to use it
-ULID_C_DIR ?=
-!if "$(ULID_C_DIR)" != ""
-ULID_C_INCDIR = -I"$(ULID_C_DIR)\include"
-ULID_C_LIBDIR = -L"$(ULID_C_DIR)\lib"
-ULID_C_LIBS   = -lulid
-!else
-ULID_C_INCDIR =
-ULID_C_LIBDIR =
-ULID_C_LIBS =
-!endif
+# Optional ULID_C_DIR (set externally if needed)
+ULID_C_DIR =
+!IF "$(ULID_C_DIR)" != ""
+  ULID_C_INCDIR = -I"$(ULID_C_DIR)\include"
+  ULID_C_LIBDIR = -L"$(ULID_C_DIR)\lib"
+  ULID_C_LIBS   = -lulid
+!ELSE
+  ULID_C_INCDIR =
+  ULID_C_LIBDIR =
+  ULID_C_LIBS =
+!ENDIF
 
-# Compiler flags
-PG_CFLAGS += -O2 -std=gnu11 -fno-lto -fno-fat-lto-objects \
-             -Wno-unused-variable -Wno-unused-function
+# Compiler flags (adjust as needed)
+PG_CFLAGS = -O2 -std=gnu11
 
-# Compile rule
-src\ulid.o: src\ulid.c
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) $(ULID_C_INCDIR) -c $** -o $@
+# Default compiler: use cl if not overridden
+!IFNDEF CC
+CC = cl
+!ENDIF
 
-# Test target
+# Compile src\ulid.c -> src\ulid.obj
+src\ulid.obj: src\ulid.c
+	@echo Compiling src\ulid.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) $(ULID_C_INCDIR) -c src\ulid.c -Fo src\ulid.obj
+
+# All target: let PGXS-provided rules handle linking/install if present
+all: $(OBJS)
+	@echo Build objects complete. If PGXS provides submake, it will handle linking/installation.
+
+# installcheck: run the Windows batch test script
 installcheck: all
-	@echo "Running batch test script..."
+	@echo Running Windows CI batch test script...
 	cmd.exe /C "cd /d %CD% && test\build\ci.bat"
 
-# Clean target
 clean:
-	-@echo "Deleting object and artifact files..."
-	-@if exist src\ulid.o del /q src\ulid.o 2>nul || true
-	-@if exist $(EXTENSION).dll del /q $(EXTENSION).dll 2>nul || true
-	-@if exist results rmdir /s /q results 2>nul || true
-	-@if exist tmp_check rmdir /s /q tmp_check 2>nul || true
-	-@if exist regression.diffs del /q regression.diffs 2>nul || true
-	-@if exist regression.out del /q regression.out 2>nul || true
+	-@echo Cleaning artifacts...
+	-@if exist src\ulid.obj del /q src\ulid.obj 2>nul
+	-@if exist $(EXTENSION).dll del /q $(EXTENSION).dll 2>nul
+	-@if exist results rmdir /s /q results 2>nul
+	-@if exist tmp_check rmdir /s /q tmp_check 2>nul
+	-@if exist regression.diffs del /q regression.diffs 2>nul
+	-@if exist regression.out del /q regression.out 2>nul
+
+# Phony targets
+!IFNDEF ALL_TARGETS
+ALL_TARGETS = all install installcheck uninstall clean
+!ENDIF
 
 .PHONY: all install installcheck uninstall clean
