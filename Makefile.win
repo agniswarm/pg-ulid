@@ -1,77 +1,59 @@
-#
-# Makefile.win - prefer PGXS (pg_config --pgxs) for Windows (mingw32-make / gcc)
-#
-# Usage:
-#   mingw32-make -f Makefile.win       # build
-#   mingw32-make -f Makefile.win installcheck
-#   mingw32-make -f Makefile.win clean
-#
 EXTENSION = ulid
 EXTVERSION = 0.1.1
 
 MODULE_big = $(EXTENSION)
-OBJS = src/ulid.o
+OBJS = src/ulid.obj
 DATA = $(EXTENSION).control sql/$(EXTENSION)--$(EXTVERSION).sql
 REGRESS =
 
 # Toolchain
-CC ?= gcc
-AR ?= ar
-RM = rm -f
-MKDIR_P = mkdir -p
+CC = cl
+AR = lib
+RM = del /q
+MKDIR_P = mkdir
 
 # Try to find pg_config and PGXS
-PG_CONFIG ?= pg_config
-PG_CONFIG_PATH := $(shell which $(PG_CONFIG) 2>/dev/null || true)
-PGXS := $(shell $(PG_CONFIG) --pgxs 2>/dev/null || true)
+PG_CONFIG = pg_config
+PG_CONFIG_PATH = $(shell where $(PG_CONFIG) 2>nul)
+PGXS = $(shell $(PG_CONFIG) --pgxs 2>nul)
 
-ifeq ($(PGXS),)
-  $(warning PGXS not found via '$(PG_CONFIG) --pgxs'. Falling back to manual rules.)
-else
-  $(info PGXS found: $(PGXS) — including PGXS (preferred))
-  include $(PGXS)
-  # When PGXS is used, the standard targets (all, install, installcheck, clean) are provided.
-  # We still provide a few convenience aliases below to keep compatibility.
-endif
-
-# If PGXS was not included, define fallback rules
-ifeq ($(PGXS),)
+!IF "$(PGXS)" == ""
+  # PGXS not found, use manual rules
   # Try to derive include/lib paths from pg_config (if available)
-  ifneq ($(PG_CONFIG_PATH),)
-    PG_INCLUDEDIR = $(shell $(PG_CONFIG) --includedir-server 2>/dev/null || $(PG_CONFIG) --includedir 2>/dev/null)
-    PG_LIBDIR     = $(shell $(PG_CONFIG) --libdir 2>/dev/null || true)
-    PG_PKGLIBDIR  = $(shell $(PG_CONFIG) --pkglibdir 2>/dev/null || true)
-  else
-    PG_INCLUDEDIR ?= /c/Program\ Files/PostgreSQL/$(EXTVERSION)/include
-    PG_LIBDIR     ?= /c/Program\ Files/PostgreSQL/$(EXTVERSION)/lib
-    PG_PKGLIBDIR  ?= /c/Program\ Files/PostgreSQL/$(EXTVERSION)/lib
-  endif
+  !IF "$(PG_CONFIG_PATH)" != ""
+    PG_INCLUDEDIR = $(shell $(PG_CONFIG) --includedir-server 2>nul)
+    PG_LIBDIR     = $(shell $(PG_CONFIG) --libdir 2>nul)
+    PG_PKGLIBDIR  = $(shell $(PG_CONFIG) --pkglibdir 2>nul)
+  !ELSE
+    PG_INCLUDEDIR = C:\Program Files\PostgreSQL\$(EXTVERSION)\include
+    PG_LIBDIR     = C:\Program Files\PostgreSQL\$(EXTVERSION)\lib
+    PG_PKGLIBDIR  = C:\Program Files\PostgreSQL\$(EXTVERSION)\lib
+  !ENDIF
 
   # Prefer server include if present
-  PG_SERVER_INC := $(PG_INCLUDEDIR)/server
-  ifneq ($(wildcard $(PG_SERVER_INC)),)
-    PG_CPPFLAGS = -I"$(PG_SERVER_INC)"
-  else
-    PG_CPPFLAGS = -I"$(PG_INCLUDEDIR)"
-  endif
+  PG_SERVER_INC = $(PG_INCLUDEDIR)\server
+  !IF EXIST("$(PG_SERVER_INC)")
+    PG_CPPFLAGS = /I"$(PG_SERVER_INC)"
+  !ELSE
+    PG_CPPFLAGS = /I"$(PG_INCLUDEDIR)"
+  !ENDIF
 
   # Compiler & flags
-  CFLAGS ?= -O2 -std=gnu11 -fPIC -Wall -Wno-unused-function -Wno-unused-variable
-  LDFLAGS ?= -shared
+  CFLAGS = /O2 /std:c11 /DWIN32 /D_WINDOWS /Wall /WX-
+  LDFLAGS = /DLL
 
   # Link libs: try to link against postgres server library; fallback to libpq
-  # You may need to adjust this on your runner depending on available import libs.
-  LIBS ?= -L"$(PG_LIBDIR)" -lpostgres -lpq
+  LIBS = /LIBPATH:"$(PG_LIBDIR)" postgres.lib
 
   # Pattern rule: compile C -> object
-  src/%.o: src/%.c
-	@$(MKDIR_P) $(@D)
-	$(CC) $(CFLAGS) $(PG_CPPFLAGS) -c $< -o $@
+  src\%.obj: src\%.c
+	@$(MKDIR_P) $(@D) 2>nul
+	$(CC) $(CFLAGS) $(PG_CPPFLAGS) /c $< /Fo$@
 
   # Link DLL
   $(EXTENSION).dll: $(OBJS)
 	@echo Linking $(EXTENSION).dll
-	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(LIBS)
+	$(CC) $(LDFLAGS) /OUT:$@ $(OBJS) $(LIBS)
 
   # Default target
   all: $(EXTENSION).dll
@@ -79,24 +61,29 @@ ifeq ($(PGXS),)
 
   # Install target (optional): copy into PG pkglibdir if known
   install: $(EXTENSION).dll
-ifneq ($(PG_PKGLIBDIR),)
+  !IF "$(PG_PKGLIBDIR)" != ""
 	@echo "Installing $(EXTENSION).dll into $(PG_PKGLIBDIR)"
-	@cp -f $(EXTENSION).dll "$(PG_PKGLIBDIR)/$(EXTENSION).dll" || echo "warning: copy failed; may need permissions"
-else
+	@copy $(EXTENSION).dll "$(PG_PKGLIBDIR)\$(EXTENSION).dll" || echo "warning: copy failed; may need permissions"
+  !ELSE
 	@echo "PG_PKGLIBDIR not detected; skipping install copy step"
-endif
+  !ENDIF
 
   # installcheck target: run Windows CI batch tests
   installcheck: all
 	@echo "Running Windows CI batch test script..."
-	cmd.exe /C "cd /d %CD% && test\\build\\ci.bat"
+	cmd.exe /C "cd /d %CD% && test\build\ci.bat"
 
   # Clean
   clean:
-	-@echo "Cleaning artifacts..."
-	-@$(RM) $(OBJS) $(EXTENSION).dll regression.diffs regression.out || true
-	-@if [ -d results ]; then rm -rf results; fi
-	-@if [ -d tmp_check ]; then rm -rf tmp_check; fi
-endif
+	@echo "Cleaning artifacts..."
+	@$(RM) $(OBJS) $(EXTENSION).dll regression.diffs regression.out 2>nul
+	@if exist results rmdir /s /q results 2>nul
+	@if exist tmp_check rmdir /s /q tmp_check 2>nul
+!ELSE
+  # PGXS found, include it
+  !INCLUDE $(PGXS)
+  # When PGXS is used, the standard targets (all, install, installcheck, clean) are provided.
+  # We still provide a few convenience aliases below to keep compatibility.
+!ENDIF
 
 .PHONY: all install installcheck clean
