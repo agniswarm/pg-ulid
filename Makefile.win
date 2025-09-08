@@ -1,10 +1,12 @@
 #
-# Makefile.win - nmake compatible build for PostgreSQL ULID extension
+# Makefile.win - minimal nmake build for PostgreSQL ULID extension
 #
 # Requirements:
 #   - Environment variable PGXS must be set to full path of pgxs.mk BEFORE running nmake.
 #     Example PGXS: C:\Program Files\PostgreSQL\15\lib\postgresql\pgxs\src\makefiles\pgxs.mk
+#   - Use a Windows shell to run nmake (pwsh or cmd)
 #
+
 EXTENSION = ulid
 EXTVERSION = 0.1.1
 
@@ -17,7 +19,7 @@ REGRESS =
 PG_CONFIG = pg_config
 
 !IF "$(PGXS)" == ""
-!ERROR "PGXS not set. Please set environment variable PGXS to the full path of pgxs.mk (e.g. C:\Program Files\PostgreSQL\15\lib\postgresql\pgxs\src\makefiles\pgxs.mk)."
+!ERROR "PGXS not set. Please set environment variable PGXS to the full path of pgxs.mk."
 !ENDIF
 
 !INCLUDE $(PGXS)
@@ -25,31 +27,30 @@ PG_CONFIG = pg_config
 # Optional ULID_C_DIR (set externally if needed)
 ULID_C_DIR =
 !IF "$(ULID_C_DIR)" != ""
-  ULID_C_INCDIR = -I"$(ULID_C_DIR)\include"
-  ULID_C_LIBDIR = -L"$(ULID_C_DIR)\lib"
-  ULID_C_LIBS   = -lulid
+ULID_C_INCDIR = -I"$(ULID_C_DIR)\include"
+ULID_C_LIBDIR = -L"$(ULID_C_DIR)\lib"
+ULID_C_LIBS   = -lulid
 !ELSE
-  ULID_C_INCDIR =
-  ULID_C_LIBDIR =
-  ULID_C_LIBS =
+ULID_C_INCDIR =
+ULID_C_LIBDIR =
+ULID_C_LIBS =
 !ENDIF
 
-# Compiler flags (adjust as needed)
-PG_CFLAGS = -O2 -std=gnu11
+# Compiler flags - MSVC defaults; change if you want to use gcc/mingw
+PG_CFLAGS = /O2
 
-# Default compiler: use cl if not overridden
 !IFNDEF CC
 CC = cl
 !ENDIF
 
-# Compile src\ulid.c -> src\ulid.obj
+# Compile src\ulid.c -> src\ulid.obj using MSVC cl
 src\ulid.obj: src\ulid.c
 	@echo Compiling src\ulid.c
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) $(ULID_C_INCDIR) -c src\ulid.c -Fo src\ulid.obj
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) $(ULID_C_INCDIR) /c src\ulid.c /Fo:src\ulid.obj
 
-# All target: let PGXS-provided rules handle linking/install if present
+# 'all' target - ensure object exists; leave linking to PGXS include
 all: $(OBJS)
-	@echo Build objects complete. If PGXS provides submake, it will handle linking/installation.
+	@echo Objects built.
 
 # installcheck: run the Windows batch test script
 installcheck: all
@@ -64,10 +65,3 @@ clean:
 	-@if exist tmp_check rmdir /s /q tmp_check 2>nul
 	-@if exist regression.diffs del /q regression.diffs 2>nul
 	-@if exist regression.out del /q regression.out 2>nul
-
-# Phony targets
-!IFNDEF ALL_TARGETS
-ALL_TARGETS = all install installcheck uninstall clean
-!ENDIF
-
-.PHONY: all install installcheck uninstall clean
