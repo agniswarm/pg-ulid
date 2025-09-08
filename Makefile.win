@@ -6,20 +6,27 @@ EXTVERSION = 0.1.1
 MODULE_big = ulid
 OBJS = src/ulid.o
 
-PGROOT = C:\Program Files\PostgreSQL\16
-PG_CONFIG = $(PGROOT)\bin\pg_config
+# Detect PostgreSQL version dynamically
+PG_CONFIG ?= pg_config
+PGROOT := $(shell $(PG_CONFIG) --bindir | sed 's/\\bin$$//')
 
 PG_CPPFLAGS = -I"$(PGROOT)\include\server"
 SHLIB_LINK = -L"$(PGROOT)\lib" -lpostgres
 
 DATA = $(EXTENSION).control sql/$(EXTENSION)--$(EXTVERSION).sql
 
-PGXS := $(shell $(PG_CONFIG) --pgxs)
+PGXS := $(shell $(PG_CONFIG) --pgxs 2>nul)
+ifeq ($(PGXS),)
+$(error "PGXS not available from pg_config ($(PG_CONFIG)). Please ensure PostgreSQL development files are installed.")
+endif
 include $(PGXS)
 
 # Custom targets for Windows
 installcheck: all
     @echo "Running tests on Windows..."
+    @echo "PG_CONFIG: $(PG_CONFIG)"
+    @echo "PGROOT: $(PGROOT)"
+    @echo "PGXS: $(PGXS)"
     set PGPORT=5432
     set PGHOST=localhost
     set PGUSER=postgres
