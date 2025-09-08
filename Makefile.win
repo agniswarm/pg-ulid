@@ -5,49 +5,33 @@ MODULE_big=$(EXTENSION)
 OBJS=src/ulid.obj
 DATA=$(EXTENSION).control sql/$(EXTENSION)--$(EXTVERSION).sql
 
-# nmake cannot execute shell during parse-time. PGXS must be supplied externally.
-
-!IF "$(PGXS)" == ""
-!ERROR "PGXS not set. Please set environment variable PGXS to the full path of pgxs.mk."
-!ENDIF
-
-!INCLUDE $(PGXS)
-
-# Optional ULID_C_DIR (set externally if needed)
-!IF "$(ULID_C_DIR)" != ""
-ULID_C_INCDIR=-I"$(ULID_C_DIR)/include"
-ULID_C_LIBDIR=-L"$(ULID_C_DIR)/lib"
-ULID_C_LIBS=-lulid
-!ELSE
-ULID_C_INCDIR=
-ULID_C_LIBDIR=
-ULID_C_LIBS=
-!ENDIF
-
-# Compiler flags - MSVC defaults; change if you want to use gcc/mingw
-PG_CFLAGS=/O2
-
-!IFNDEF CC
+# Simple nmake build without PGXS dependency
 CC=cl
-!ENDIF
+PG_CFLAGS=/O2 /DWIN32 /D_WINDOWS
 
-# Compile src/ulid.c -> src/ulid.obj using MSVC cl
+# Compile src/ulid.c -> src/ulid.obj
 src/ulid.obj: src/ulid.c
 	@echo Compiling src/ulid.c
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) $(ULID_C_INCDIR) /c src/ulid.c /Fo:src/ulid.obj
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) /c src/ulid.c /Fo:src/ulid.obj
 
-# 'all' target - ensure object exists; leave linking to PGXS include
-all: $(OBJS)
-	@echo Objects built.
+# Build the DLL
+$(EXTENSION).dll: $(OBJS)
+	@echo Linking $(EXTENSION).dll
+	link /DLL /OUT:$(EXTENSION).dll $(OBJS) postgres.lib
 
-# installcheck: run the Windows batch test script
+# Default target
+all: $(EXTENSION).dll
+	@echo Build complete.
+
+# Test target
 installcheck: all
 	@echo Running Windows CI batch test script...
 	cmd.exe /C "cd /d %CD% && test/build/ci.bat"
 
+# Clean target
 clean:
 	-@echo Cleaning artifacts...
-	-@if exist src\\ulid.obj del /q src\\ulid.obj 2>nul
+	-@if exist src/ulid.obj del /q src/ulid.obj 2>nul
 	-@if exist $(EXTENSION).dll del /q $(EXTENSION).dll 2>nul
 	-@if exist results rmdir /s /q results 2>nul
 	-@if exist tmp_check rmdir /s /q tmp_check 2>nul
