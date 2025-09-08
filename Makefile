@@ -1,134 +1,67 @@
+#
+# Makefile - Unix (Linux / macOS) build for PostgreSQL ULID extension
+#
+
 EXTENSION = ulid
 EXTVERSION = 0.1.1
 
 MODULE_big = $(EXTENSION)
-OBJS = src\ulid.obj
-DATA = $(EXTENSION).control sql\$(EXTENSION)--$(EXTVERSION).sql
+OBJS = src/ulid.o
+DATA = $(EXTENSION).control sql/$(EXTENSION)--$(EXTVERSION).sql
 REGRESS =
 
-# default compiler: cl (MSVC). Override by setting CC in env (e.g. CC=gcc).
-!IFNDEF CC
-CC = cl
-!ENDIF
+# Use pg_config to discover PGXS; fallback to pg_config in PATH
+PG_CONFIG ?= pg_config
+# Explicitly get the path to PGXS using pg_config, and fail with a clear error if not found.
+PG_CONFIG_PATH := $(shell which $(PG_CONFIG) 2>/dev/null)
+ifeq ($(PG_CONFIG_PATH),)
+$(error "pg_config not found in PATH. Please install PostgreSQL development packages or set PG_CONFIG. PATH: $(PATH)")
+endif
 
-# If PGXS is provided (preferred), include it. PGXS must be full path to pgxs.mk.
-!IF "$(PGXS)" != ""
-  !INCLUDE $(PGXS)
-!ELSE
+PGXS := $(shell $(PG_CONFIG) --pgxs 2>/dev/null)
+ifeq ($(PGXS),)
+$(error "PGXS not available from pg_config ($(PG_CONFIG)). Please ensure PostgreSQL development files are installed. PG_CONFIG: $(PG_CONFIG_PATH)")
+endif
 
-  # Fallback variables: try to read them from environment (set by pg_setup.sh)
-  !IFDEF PG_INCLUDEDIR
-    PG_INCLUDEDIR = $(PG_INCLUDEDIR)
-  !ELSE
-    PG_INCLUDEDIR =
-  !ENDIF
+include $(PGXS)
 
-  !IFDEF PG_LIBDIR
-    PG_LIBDIR = $(PG_LIBDIR)
-  !ELSE
-    PG_LIBDIR =
-  !ENDIF
+# Optional: point to ulid-c include/lib if you want to use it
+ULID_C_DIR ?=
+ifdef ULID_C_DIR
+  ULID_C_INCDIR = -I$(ULID_C_DIR)/include
+  ULID_C_LIBDIR = -L$(ULID_C_DIR)/lib
+  ULID_C_LIBS   = -lulid
+else
+  ULID_C_INCDIR =
+  ULID_C_LIBDIR =
+  ULID_C_LIBS =
+endif
 
-  !IFDEF PG_PKGLIBDIR
-    PG_PKGLIBDIR = $(PG_PKGLIBDIR)
-  !ELSE
-    PG_PKGLIBDIR =
-  !ENDIF
+TARGET_ARCH ?= $(shell uname -m)
+ARCH_FLAGS :=
+ifeq ($(TARGET_ARCH), i386)
+  ARCH_FLAGS += -m32
+endif
 
-  !IFDEF PG_BINDIR
-    PG_BINDIR = $(PG_BINDIR)
-  !ELSE
-    PG_BINDIR =
-  !ENDIF
+OPTFLAGS ?= -O2
 
-  # Compiler / linker flags for MSVC (cl + link)
-  # If you use gcc, set CC=gcc and override the compile/link commands below.
-  ifdef CC
-    # If CC == cl (MSVC) use MSVC flags; otherwise GCC flags are set below in compile/link commands.
-  endif
+PG_CFLAGS += $(OPTFLAGS) $(ARCH_FLAGS) -std=gnu11 -fno-lto -fno-fat-lto-objects \
+             -Wno-unused-variable -Wno-unused-function
 
-  # Preprocessor include flags (MSVC style)
-  PG_CFLAGS = /I"$(PG_INCLUDEDIR)"
+CC ?= $(HOSTCC)
 
-  # Linker library path (MSVC)
-  PG_LDFLAGS = /LIBPATH:"$(PG_LIBDIR)"
+src/%.o: src/%.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) $(ULID_C_INCDIR) -c $< -o $@
 
-  # Link libraries - default link against libpq (MSVC import lib name)
-  PG_LIBS = libpq.lib
+# Custom installcheck: run our own CI script
+installcheck: all
+	@echo "Running extension tests via test/build/ci.sh..."
+	@echo "Data files: $(DATA)"
+	@if [ -f "test/build/ci.sh" ]; then \
+		bash test/build/ci.sh; \
+	else \
+		echo "ERROR: test/build/ci.sh not found"; \
+		exit 1; \
+	fi
 
-  # Link command (MSVC). If you're using gcc, the Makefile will use an alternate link command.
-  LINK_CMD_MSVC = link /DLL /OUT:$(EXTENSION).dll $(OBJS) $(PG_LDFLAGS) $(PG_LIBS)
-
-!ENDIF
-
-# Default compile rule - uses cl by default, or gcc if CC=gcc set in env.
-src\ulid.obj: src\ulid.c
-	@echo Building $<
-	@if "$(CC)" == "cl" ( \
-	  $(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) /c src\ulid.c /Fo:src\ulid.obj \
-	) else ( \
-	  echo "Using gcc to compile"; \
-	  $(CC) $(CFLAGS) $(CPPFLAGS) -I"$(PG_INCLUDEDIR)" -c src/ulid.c -o src/ulid.obj \
-	)
-
-# 'all' target. If PGXS included its own install/link rules, they usually provide a submake.
-# When included, those rules will override; when not, we perform manual link here.
-all: $(OBJS)
-	@echo Objects built.
-	!IF "$(PGXS)" == ""
-		@echo PGXS not available; performing manual link for extension...
-		@if "$(CC)" == "cl" ( \
-		  $(LINK_CMD_MSVC) \
-		) else ( \
-		  echo "Linking with gcc (mingw)"; \
-		  $(CC) -shared -o $(EXTENSION).dll $(OBJS) -L"$(PG_LIBDIR)" -lpq \
-		) \
-	!ENDIF
-
-# install target: if PGXS included, its install target will typically be available; fallback copies .dll to pkglibdir
-install: all
-	@echo Installing extension...
-	!IF "$(PGXS)" != ""
-		@echo Using PGXS rules for install (if available)...
-		@rem If pgxs provided install target this will invoke it
-	!ELSE
-		@if exist "$(PG_PKGLIBDIR)" ( \
-		  copy /Y "$(EXTENSION).dll" "$(PG_PKGLIBDIR)\" > nul && echo "Copied $(EXTENSION).dll to $(PG_PKGLIBDIR)" \
-		) else ( \
-		  echo "PG_PKGLIBDIR not set or does not exist; cannot copy extension. Please set PG_PKGLIBDIR to your Postgres pkglibdir." && exit 1 \
-		) \
-	!ENDIF
-
-# installcheck: run Windows CI batch test script (test\build\ci.bat)
-installcheck: install
-	@echo Running Windows CI batch test script...
-	cmd.exe /C "cd /d %CD% && test\build\ci.bat"
-
-# uninstall target: best-effort remove files from pkglibdir
-uninstall:
-	@echo Uninstalling extension (best-effort)...
-	@if exist "$(PG_PKGLIBDIR)\$(EXTENSION).dll" ( \
-	  del /Q "$(PG_PKGLIBDIR)\$(EXTENSION).dll" > nul && echo "Removed $(PG_PKGLIBDIR)\$(EXTENSION).dll" \
-	) else ( \
-	  echo "No installed $(EXTENSION).dll found in $(PG_PKGLIBDIR)" \
-	) 
-
-# Clean artifacts
-clean:
-	-@echo Cleaning artifacts...
-	-@if exist src\ulid.obj del /Q src\ulid.obj 2>nul
-	-@if exist $(EXTENSION).dll del /Q $(EXTENSION).dll 2>nul
-	-@if exist results rmdir /S /Q results 2>nul
-	-@if exist tmp_check rmdir /S /Q tmp_check 2>nul
-	-@if exist regression.diffs del /Q regression.diffs 2>nul
-	-@if exist regression.out del /Q regression.out 2>nul
-
-# Show status helpful targets
-help:
-	@echo "Makefile.win targets:"
-	@echo "  all         - build objects (and link if PGXS not available)"
-	@echo "  install     - install extension (copies DLL to PG_PKGLIBDIR if PGXS not available)"
-	@echo "  installcheck- run tests via test\\build\\ci.bat (after install)"
-	@echo "  clean       - clean build artifacts"
-
-# End of Makefile.win
+.PHONY: all all-local install installcheck uninstall clean
