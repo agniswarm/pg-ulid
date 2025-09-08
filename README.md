@@ -261,7 +261,7 @@ INSERT INTO events (id, data) VALUES
   ('01K4FQ7QN4ZSW0SG5XACGM2HB5', '{"event":"login"}');
 ```
 
-###  Querying
+### Querying
 
 Use `EXPLAIN ANALYZE` to debug performance.
 
