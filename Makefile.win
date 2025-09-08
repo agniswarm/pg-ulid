@@ -12,15 +12,15 @@ PG_CFLAGS=/O2 /DWIN32 /D_WINDOWS
 # Compile src/ulid.c -> src/ulid.obj
 src/ulid.obj: src/ulid.c
 	@echo Compiling src/ulid.c
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) /c src/ulid.c /Fo:src/ulid.obj
+	$(CC) $(PG_CFLAGS) /c src/ulid.c /Fo:src/ulid.obj
 
 # Build the DLL
-$(EXTENSION).dll: $(OBJS)
-	@echo Linking $(EXTENSION).dll
-	link /DLL /OUT:$(EXTENSION).dll $(OBJS) postgres.lib
+ulid.dll: $(OBJS)
+	@echo Linking ulid.dll
+	link /DLL /OUT:ulid.dll $(OBJS) postgres.lib
 
 # Default target
-all: $(EXTENSION).dll
+all: ulid.dll
 	@echo Build complete.
 
 # Test target
@@ -32,7 +32,7 @@ installcheck: all
 clean:
 	-@echo Cleaning artifacts...
 	-@if exist src/ulid.obj del /q src/ulid.obj 2>nul
-	-@if exist $(EXTENSION).dll del /q $(EXTENSION).dll 2>nul
+	-@if exist ulid.dll del /q ulid.dll 2>nul
 	-@if exist results rmdir /s /q results 2>nul
 	-@if exist tmp_check rmdir /s /q tmp_check 2>nul
 	-@if exist regression.diffs del /q regression.diffs 2>nul
