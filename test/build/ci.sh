@@ -22,7 +22,7 @@ if ! psql -c "CREATE EXTENSION IF NOT EXISTS ulid;"; then
     echo "ERROR: Failed to create extension. Make sure it's properly installed."
     echo "Check that the extension files are in the correct location:"
     echo "  - /usr/share/postgresql/*/extension/ulid.control"
-    echo "  - /usr/share/postgresql/*/extension/ulid--1.0.0.sql"
+    echo "  - /usr/share/postgresql/*/extension/ulid--0.1.1.sql"
     exit 1
 fi
 
