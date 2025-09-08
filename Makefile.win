@@ -3,22 +3,14 @@ EXTVERSION = 0.1.1
 
 DATA_built = sql\$(EXTENSION)--$(EXTVERSION).sql
 OBJS = src\ulid.obj
-HEADERS = 
-
-REGRESS = 
-REGRESS_OPTS = --inputdir=test --load-extension=$(EXTENSION)
+HEADERS =
 
 # For /arch flags
 # https://learn.microsoft.com/en-us/cpp/build/reference/arch-minimum-cpu-architecture
 OPTFLAGS =
 
-# For auto-vectorization:
-# - MSVC (needs /O2 /fp:fast) - https://learn.microsoft.com/en-us/cpp/parallel/auto-parallelization-and-auto-vectorization?#auto-vectorizer
+# For auto-vectorization (MSVC needs /O2 /fp:fast)
 PG_CFLAGS = $(PG_CFLAGS) $(OPTFLAGS) /O2 /fp:fast
-
-# Debug MSVC auto-vectorization
-# https://learn.microsoft.com/en-us/cpp/error-messages/tool-errors/vectorizer-and-parallelizer-messages
-# PG_CFLAGS = $(PG_CFLAGS) /Qvec-report:2
 
 # Try to find pg_config and PGXS first
 PG_CONFIG = pg_config
@@ -28,11 +20,9 @@ PGXS = $(shell $(PG_CONFIG) --pgxs 2>nul)
 !if "$(PGXS)" != ""
   # PGXS found, include it
   !INCLUDE $(PGXS)
-  # When PGXS is used, the standard targets (all, install, installcheck, clean) are provided.
-  # We still provide a few convenience aliases below to keep compatibility.
+  # Standard PGXS targets are now available
 !else
   # PGXS not found, use manual rules
-  # Try to derive include/lib paths from pg_config (if available)
   !if "$(PG_CONFIG_PATH)" != ""
     PGROOT = $(shell $(PG_CONFIG) --pgdata 2>nul | sed 's/\\data$$//')
     BINDIR = $(shell $(PG_CONFIG) --bindir 2>nul)
@@ -51,30 +41,26 @@ PGXS = $(shell $(PG_CONFIG) --pgxs 2>nul)
     PKGLIBDIR = $(PGROOT)\lib
     SHAREDIR = $(PGROOT)\share
   !endif
+!endif
 
-  # Use $(PGROOT)\bin\pg_regress for Postgres < 17
-  PG_REGRESS = $(LIBDIR)\pgxs\src\test\regress\pg_regress
+CFLAGS = /nologo /I"$(INCLUDEDIR_SERVER)\port\win32_msvc" /I"$(INCLUDEDIR_SERVER)\port\win32" /I"$(INCLUDEDIR_SERVER)" /I"$(INCLUDEDIR)"
+CFLAGS = $(CFLAGS) $(PG_CFLAGS)
 
-  CFLAGS = /nologo /I"$(INCLUDEDIR_SERVER)\port\win32_msvc" /I"$(INCLUDEDIR_SERVER)\port\win32" /I"$(INCLUDEDIR_SERVER)" /I"$(INCLUDEDIR)"
+SHLIB = $(EXTENSION).dll
+LIBS = "$(LIBDIR)\postgres.lib"
 
-  CFLAGS = $(CFLAGS) $(PG_CFLAGS)
+all: $(SHLIB) $(DATA_built)
 
-  SHLIB = $(EXTENSION).dll
-
-  LIBS = "$(LIBDIR)\postgres.lib"
-
-  all: $(SHLIB) $(DATA_built)
-
-  .c.obj:
+.c.obj:
 	$(CC) $(CFLAGS) /c $< /Fo$@
 
-  $(SHLIB): $(OBJS)
+$(SHLIB): $(OBJS)
 	$(CC) $(CFLAGS) $(OBJS) $(LIBS) /link /DLL /OUT:$(SHLIB)
 
-  sql\$(EXTENSION)--$(EXTVERSION).sql: sql\$(EXTENSION).sql
+sql\$(EXTENSION)--$(EXTVERSION).sql: sql\$(EXTENSION).sql
 	copy sql\$(EXTENSION).sql $@
 
-  install: all
+install: all
 	copy $(SHLIB) "$(PKGLIBDIR)"
 	copy $(EXTENSION).control "$(SHAREDIR)\extension"
 	copy sql\$(EXTENSION)--*.sql "$(SHAREDIR)\extension"
@@ -83,12 +69,12 @@ PGXS = $(shell $(PG_CONFIG) --pgxs 2>nul)
 	for %f in ($(HEADERS)) do copy %f "$(INCLUDEDIR_SERVER)\extension\$(EXTENSION)"
 	!endif
 
-  # installcheck target: run Windows CI batch tests (keeping our custom test)
-  installcheck: all
+# installcheck target: always run your Windows CI batch tests
+installcheck: all
 	@echo "Running Windows CI batch test script..."
 	cmd.exe /C "cd /d %CD% && test\build\ci.bat"
 
-  uninstall:
+uninstall:
 	del /f "$(PKGLIBDIR)\$(SHLIB)"
 	del /f "$(SHAREDIR)\extension\$(EXTENSION).control"
 	del /f "$(SHAREDIR)\extension\$(EXTENSION)--*.sql"
@@ -97,7 +83,7 @@ PGXS = $(shell $(PG_CONFIG) --pgxs 2>nul)
 	rmdir "$(INCLUDEDIR_SERVER)\extension\$(EXTENSION)"
 	!endif
 
-  clean:
+clean:
 	del /f $(SHLIB) $(EXTENSION).lib $(EXTENSION).exp
 	del /f $(DATA_built)
 	del /f $(OBJS)
