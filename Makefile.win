@@ -1,9 +1,9 @@
 EXTENSION = ulid
 EXTVERSION = 0.1.1
 
-DATA_built = 
+DATA_built = sql\$(EXTENSION)--$(EXTVERSION).sql
 OBJS = src\ulid.obj
-HEADERS = ulid.h
+HEADERS = src\ulid.h
 
 # For /arch flags
 # https://learn.microsoft.com/en-us/cpp/build/reference/arch-minimum-cpu-architecture
