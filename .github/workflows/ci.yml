@@ -42,17 +42,10 @@ jobs:
         with:
           version: ${{ matrix.pg }}
           install-contrib: 'true'
+          operating-system: ${{ matrix.os }}
       
       - name: Build and test extension
         uses: agniswarm/pg-ext-actions/build-check@master
         with:
           working-directory: ./
-      
-      - name: Upload test artifacts on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results-pg${{ matrix.pg }}-${{ matrix.os }}
-          path: |
-            regression.diffs
-            regression.out
+          operating-system: ${{ matrix.os }}
