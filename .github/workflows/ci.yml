@@ -2,35 +2,87 @@ name: Build and Test ULID Extension
 on: [push, pull_request]
 
 jobs:
-  test:
+  linux:
+    name: Linux Builds
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-22.04
-            pg: 17
-          - os: ubuntu-22.04
-            pg: 16
-          - os: ubuntu-22.04
-            pg: 15
-          - os: ubuntu-22.04
-            pg: 14
-          - os: ubuntu-22.04
-            pg: 13
-          - os: macos-14
-            pg: 17
-          - os: macos-14
-            pg: 16
-          - os: macos-12
-            pg: 14
-          - os: windows-2022
-            pg: 17
-          - os: windows-2022
-            pg: 16
-          - os: windows-2022
-            pg: 14
+          - pg: 19
+            os: ubuntu-24.04
+          - pg: 18
+            os: ubuntu-24.04
+          - pg: 17
+            os: ubuntu-24.04
+          - pg: 16
+            os: ubuntu-24.04-arm
+          - pg: 15
+            os: ubuntu-22.04
+          - pg: 14
+            os: ubuntu-22.04-arm
+          - pg: 13
+            os: ubuntu-22.04
     
-    name: PostgreSQL ${{ matrix.pg }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup PostgreSQL
+        uses: agniswarm/pg-ext-actions/pg-setup@master
+        with:
+          version: ${{ matrix.pg }}
+          install-contrib: 'true'
+          operating-system: ${{ matrix.os }}
+      
+      - name: Build and test extension
+        uses: agniswarm/pg-ext-actions/build-check@master
+        with:
+          working-directory: ./
+          operating-system: ${{ matrix.os }}
+
+  macos:
+    name: macOS Builds
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pg: 17
+            os: macos-15
+          - pg: 14
+            os: macos-13
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup PostgreSQL
+        uses: agniswarm/pg-ext-actions/pg-setup@master
+        with:
+          version: ${{ matrix.pg }}
+          install-contrib: 'true'
+          operating-system: ${{ matrix.os }}
+      
+      - name: Build and test extension
+        uses: agniswarm/pg-ext-actions/build-check@master
+        with:
+          working-directory: ./
+          operating-system: ${{ matrix.os }}
+
+  windows:
+    name: Windows Builds
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pg: 17
+            os: windows-2025
+          - pg: 14
+            os: windows-2022
+    
     runs-on: ${{ matrix.os }}
     
     steps:
