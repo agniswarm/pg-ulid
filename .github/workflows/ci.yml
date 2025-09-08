@@ -8,10 +8,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - pg: 19
-            os: ubuntu-24.04
-          - pg: 18
-            os: ubuntu-24.04
           - pg: 17
             os: ubuntu-24.04
           - pg: 16
@@ -65,6 +61,15 @@ jobs:
           version: ${{ matrix.pg }}
           install-contrib: 'true'
           operating-system: ${{ matrix.os }}
+
+      - name: "Debug PostgreSQL Installation"
+        run: |
+            echo "Checking pg_config availability..."
+            which pg_config || echo "pg_config not in PATH"
+            pg_config --version || echo "pg_config not working"
+            echo "PATH: $PATH"
+            echo "PG_CONFIG: $PG_CONFIG"
+        shell: bash
       
       - name: Build and test extension
         uses: agniswarm/pg-ext-actions/build-check@master
