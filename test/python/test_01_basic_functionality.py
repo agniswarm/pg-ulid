@@ -13,6 +13,7 @@ The suite will skip tests that rely on missing functions (ulid, ulid_random, etc
 """
 
 import os
+from datetime import datetime
 import psycopg2
 import pytest
 
@@ -130,6 +131,79 @@ def test_ulid_time_and_parse(db, ulid_functions_available):
     )
 
 
+def test_readme_basic_generation(db, ulid_functions_available):
+    """Basic ULID generation as documented in README."""
+    if not ulid_functions_available.get("ulid"):
+        pytest.skip("ulid() function not available in database")
+    
+    # Basic generation
+    assert exec_one(db, "SELECT ulid()") is not None
+    assert exec_one(db, "SELECT ulid_random()") is not None
+    assert exec_one(db, "SELECT ulid_crypto()") is not None
+
+
+def test_readme_time_based_generation(db, ulid_functions_available):
+    """Time-based ULID generation as documented in README."""
+    if not ulid_functions_available.get("ulid_time"):
+        pytest.skip("ulid_time() not available in database")
+    if not ulid_functions_available.get("ulid_generate_with_timestamp"):
+        pytest.skip("ulid_generate_with_timestamp() not available in database")
+    
+    # Time-based generation
+    assert exec_one(db, "SELECT ulid_time(1609459200000)") is not None
+    assert exec_one(db, "SELECT ulid_generate_with_timestamp(1609459200000)") is not None
+
+
+def test_readme_parsing_and_timestamp_extraction(db, ulid_functions_available):
+    """Parsing and timestamp extraction as documented in README."""
+    if not ulid_functions_available.get("ulid_parse"):
+        pytest.skip("ulid_parse() not available in database")
+    if not ulid_functions_available.get("ulid_timestamp"):
+        pytest.skip("ulid_timestamp() not available in database")
+    
+    # Parsing and timestamp extraction
+    assert exec_one(db, "SELECT ulid_parse('01ARZ3NDEKTSV4RRFFQ69G5FAV')") is not None
+    ts_ms = exec_one(db, "SELECT ulid_timestamp('01ARZ3NDEKTSV4RRFFQ69G5FAV')")
+    assert ts_ms is not None and isinstance(ts_ms, (int, float))
+
+
+def test_readme_batch_generation(db, ulid_functions_available):
+    """Batch generation as documented in README."""
+    if not ulid_functions_available.get("ulid_batch"):
+        pytest.skip("ulid_batch() not available in database")
+    if not ulid_functions_available.get("ulid_random_batch"):
+        pytest.skip("ulid_random_batch() not available in database")
+    
+    # Batch generation
+    assert exec_one(db, "SELECT array_length(ulid_batch(5), 1)") == 5
+    assert exec_one(db, "SELECT array_length(ulid_random_batch(3), 1)") == 3
+
+
+def test_readme_casting_operations(db, ulid_functions_available):
+    """Casting operations as documented in README."""
+    if not ulid_functions_available.get("ulid"):
+        pytest.skip("ulid() function not available in database")
+    
+    # Text casting
+    assert exec_one(db, "SELECT '01ARZ3NDEKTSV4RRFFQ69G5FAV'::ulid") is not None
+    
+    # ULID to text
+    text_val = exec_one(db, "SELECT ulid()::text")
+    assert text_val is not None and isinstance(text_val, str) and len(text_val) == 26
+    
+    # Timestamp casting
+    assert exec_one(db, "SELECT '2023-09-15 12:00:00'::timestamp::ulid") is not None
+    
+    # ULID to timestamp
+    ts_val = exec_one(db, "SELECT ulid()::timestamp")
+    assert ts_val is not None and isinstance(ts_val, datetime)
+    
+    # Other casting operations
+    assert exec_one(db, "SELECT ulid()::timestamptz") is not None
+    assert exec_one(db, "SELECT ulid()::uuid") is not None
+    assert exec_one(db, "SELECT '550e8400-e29b-41d4-a716-446655440000'::uuid::ulid") is not None
+
+
 def test_uniqueness_small_batch(db, ulid_functions_available):
     if not ulid_functions_available.get("ulid"):
         pytest.skip("ulid() not available in database")
@@ -205,6 +279,4 @@ def test_text_equality_and_consecutive_difference(db):
     assert diff is True
 
 
-def test_null_handling(db):
-    val = exec_one(db, "SELECT NULL")
-    assert val is None
+# Note: test_null_handling moved to test_08_error_handling.py for comprehensive ULID null handling

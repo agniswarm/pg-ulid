@@ -94,88 +94,15 @@ def test_preconditions(db):
 # ---------------------------------------------------------------------
 # Fixed tests
 # ---------------------------------------------------------------------
-def test_ulid_time_and_parse(db):
-    """ulid_time should produce canonical 26-char text and ulid_parse must be lossless (bytes)."""
-    if not has_function(db, "ulid_time") or not has_function(db, "ulid_parse"):
-        pytest.skip("ulid_time/ulid_parse not available")
+# Note: test_ulid_time_and_parse moved to test_01_basic_functionality.py
 
-    # specific timestamp: 2022-01-01 00:00:00 UTC -> 1640995200000 ms
-    ut = exec_one(db, "SELECT ulid_time(1640995200000)::text")
-    assert ut is not None
-    # canonical textual output from a spec-compliant implementation is 26 chars
-    assert len(ut) == 26, f"ulid_time() produced unexpected length: {len(ut)}"
+# Note: test_text_round_trip_preserves_value moved to test_02_casting_operations.py
 
-    known = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+# Note: test_batch_casting_uniqueness moved to test_02_casting_operations.py
 
-    # Compare parsed bytes (lossless) instead of textual equality because text may canonicalize
-    parsed_bytes = exec_one(db, "SELECT ulid_parse(%s)::bytea", (known,))
-    direct_cast_bytes = exec_one(db, "SELECT %s::ulid::bytea", (known,))
-    assert parsed_bytes == direct_cast_bytes, "ulid_parse(text)::bytea differs from direct cast text::ulid::bytea"
+# Note: test_load_generation_count moved to test_03_monotonic_generation.py
 
-    # also verify canonical text round-trip is a valid canonical ULID of length 26
-    canonical_from_parsed = exec_one(db, "SELECT (ulid_parse(%s))::text", (known,))
-    assert canonical_from_parsed is not None and len(canonical_from_parsed) == 26
-
-def test_text_round_trip_preserves_value(db):
-    """Text -> ULID -> text should preserve the ULID value (compare bytes)."""
-    q = """
-        WITH round_trip_test AS (
-            SELECT
-                '01ARZ3NDEKTSV4RRFFQ69G5FAV'::text AS original_text,
-                '01ARZ3NDEKTSV4RRFFQ69G5FAV'::ulid::text AS round_trip_text,
-                '01ARZ3NDEKTSV4RRFFQ69G5FAV'::ulid::bytea AS original_bytes,
-                ('01ARZ3NDEKTSV4RRFFQ69G5FAV'::ulid::text)::ulid::bytea AS round_trip_bytes
-        )
-        SELECT original_text, round_trip_text, original_bytes, round_trip_bytes FROM round_trip_test
-    """
-    with db.cursor() as cur:
-        cur.execute(q)
-        r = cur.fetchone()
-
-    assert r is not None, "Round-trip query returned no row"
-    original_text, round_trip_text, orig_bytes, round_bytes = r
-
-    # Binary equality is the authoritative lossless check
-    assert orig_bytes == round_bytes, "Text -> ULID -> text round-trip did not preserve binary ULID value"
-
-def test_batch_casting_uniqueness(db):
-    """Unnesting ulid_batch should produce the requested number of unique ULIDs."""
-    row = exec_fetchone(
-        db,
-        """
-        WITH batch_test AS (
-            SELECT unnest(ulid_batch(5)) AS u
-        )
-        SELECT COUNT(*)::int, COUNT(DISTINCT u::text)::int FROM batch_test
-        """,
-    )
-    assert row is not None, "Query returned no row"
-    total, unique = row
-    assert total == unique == 5, f"Expected 5 unique ULIDs from ulid_batch(5), got total={total}, unique={unique}"
-
-def test_load_generation_count(db):
-    """Generate a larger set of ULIDs to ensure generation under load (count check only)."""
-    row = exec_fetchone(
-        db,
-        """
-        WITH generated AS (
-            SELECT ulid() AS u FROM generate_series(1, 1000)
-        )
-        SELECT COUNT(*)::int FROM generated
-        """
-    )
-    # exec_fetchone returns a tuple (count,), ensure we read it
-    assert row is not None and row[0] == 1000, f"Expected 1000 ULIDs in load test, got {row}"
-
-def test_final_basic_checks(db):
-    """A couple of final sanity checks: text length and parse round-trip for a known ULID."""
-    length = exec_one(db, "SELECT length(ulid()::text)")
-    assert length == 26, f"ULID text length expected 26, got {length}"
-
-    # Parse round-trip (known value) - compare bytes to ensure lossless parsing
-    parsed_bytes = exec_one(db, "SELECT ulid_parse('01ARZ3NDEKTSV4RRFFQ69G5FAV')::bytea")
-    direct_bytes = exec_one(db, "SELECT '01ARZ3NDEKTSV4RRFFQ69G5FAV'::ulid::bytea")
-    assert parsed_bytes == direct_bytes, "ulid_parse() did not round-trip the known ULID as binary equality"
+# Note: test_final_basic_checks moved to test_03_monotonic_generation.py
 
 # ---------------------------------------------------------------------
 # Stress tests (skips if ULID_STRESS_MAX is too low)

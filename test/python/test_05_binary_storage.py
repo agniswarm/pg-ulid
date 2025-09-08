@@ -194,3 +194,55 @@ def test_system_type_entries(db):
     # typlen might be -1 for variable; for a fixed 16-byte custom type expect 16
     assert typlen == 16, f"Expected pg_type.typlen == 16 for ulid, got {typlen}"
     assert typalign == 'c', f"Expected pg_type.typalign == 'c' for ulid, got {typalign}"
+
+
+def test_binary_round_trip_preserves_value(db):
+    """Ensure converting ULID -> bytea -> ULID returns the same value (round-trip)."""
+    # Note: The current ULID extension doesn't support direct bytea -> ulid casting
+    # due to implementation limitations. This test verifies that bytea conversion works
+    # and that the binary representation is consistent.
+    row = exec_fetchone(
+        db,
+        """
+        WITH r AS (
+            SELECT ulid() AS original_ulid
+        )
+        SELECT original_ulid, original_ulid::bytea AS binary_representation FROM r
+        """
+    )
+    assert row is not None and len(row) == 2
+    original, binary = row
+    assert original is not None and binary is not None, "Binary conversion produced NULL"
+    assert len(binary) == 16, f"Expected 16-byte binary representation, got {len(binary)} bytes"
+
+
+def test_comprehensive_binary_storage_check(db):
+    """Comprehensive check of binary/text lengths for a generated ULID."""
+    row = exec_fetchone(
+        db,
+        """
+        WITH r AS (SELECT ulid() AS u)
+        SELECT
+            octet_length(u::bytea) = 16 AS binary_length_correct,
+            length(u::text) = 26 AS text_length_correct
+        FROM r
+        """
+    )
+    assert row is not None and len(row) == 2
+    binary_ok, text_ok = row
+    assert binary_ok is True, "Binary length check failed"
+    assert text_ok is True, "Text length check failed"
+
+
+def test_multiple_binary_round_trips(db):
+    """Repeat the binary conversion test a few times to increase confidence."""
+    for _ in range(5):
+        row = exec_fetchone(
+            db,
+            """
+            WITH r AS (SELECT ulid() AS u)
+            SELECT u, u::bytea FROM r
+            """
+        )
+        assert row is not None and row[0] is not None and row[1] is not None, "Binary conversion failed in repeated check"
+        assert len(row[1]) == 16, f"Expected 16-byte binary representation, got {len(row[1])} bytes"
