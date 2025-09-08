@@ -18,26 +18,26 @@ jobs:
             os: ubuntu-22.04-arm
           - pg: 13
             os: ubuntu-22.04
-    
+
     runs-on: ${{ matrix.os }}
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup PostgreSQL
         uses: agniswarm/pg-ext-actions/pg-setup@master
         with:
           version: ${{ matrix.pg }}
           install-contrib: 'true'
           operating-system: ${{ matrix.os }}
-      
+
       - name: Verify PostgreSQL installation
         run: |
           echo "Verifying PostgreSQL installation..."
           pg_config --version || echo "pg_config not found"
           echo "PostgreSQL installation verified"
-      
+
       - name: Build and test extension
         uses: agniswarm/pg-ext-actions/build-check@master
         with:
@@ -54,25 +54,26 @@ jobs:
             os: macos-15
           - pg: 14
             os: macos-13
-    
+
     runs-on: ${{ matrix.os }}
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup PostgreSQL
         uses: agniswarm/pg-ext-actions/pg-setup@master
         with:
           version: ${{ matrix.pg }}
           install-contrib: 'true'
           operating-system: ${{ matrix.os }}
-      
+
       - name: Verify PostgreSQL installation
         run: |
           echo "Verifying PostgreSQL installation..."
           pg_config --version || echo "pg_config not found"
           echo "PostgreSQL installation verified"
+
       - name: Build and test extension
         uses: agniswarm/pg-ext-actions/build-check@master
         with:
@@ -89,14 +90,34 @@ jobs:
             os: windows-2025
           - pg: 14
             os: windows-2022
-    
+
     runs-on: ${{ matrix.os }}
-    
+    env:
+      PG_VERSION: ${{ matrix.pg }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
-      - name: Cache PostgreSQL installation
+
+      # ---------------------
+      # Restore Chocolatey download cache early (so choco reuses installers)
+      # NOTE: this caches only Chocolatey temp downloads, not build outputs.
+      # ---------------------
+      - name: Restore Chocolatey cache
+        uses: actions/cache@v4
+        with:
+          path: C:\Users\runneradmin\AppData\Local\Temp\chocolatey
+          key: choco-postgres-${{ matrix.os }}-pg${{ matrix.pg }}
+          restore-keys: |
+            choco-postgres-${{ matrix.os }}-pg${{ matrix.pg }}
+            choco-postgres-${{ matrix.os }}-
+            choco-postgres-
+
+      # ---------------------
+      # Restore Program Files Postgres cache (program files installation snapshot)
+      # We cache the Program Files/Postgres install directory to avoid re-running the installer.
+      # ---------------------
+      - name: Restore PostgreSQL program-files cache
         id: cache-postgres
         uses: actions/cache@v4
         with:
@@ -107,24 +128,70 @@ jobs:
           restore-keys: |
             postgresql-${{ matrix.pg }}-${{ matrix.os }}
             postgresql-${{ matrix.pg }}-
-      
-      - name: Setup PostgreSQL
+            postgresql-
+
+      # Only run the full setup if program-files cache didn't hit
+      - name: Setup PostgreSQL (Windows)
         if: steps.cache-postgres.outputs.cache-hit != 'true'
         uses: agniswarm/pg-ext-actions/pg-setup@master
         with:
           version: ${{ matrix.pg }}
           install-contrib: 'true'
           operating-system: ${{ matrix.os }}
-      
+
+      - name: "Debug: show pg_config and pgxs and Postgres dir"
+        shell: pwsh
+        run: |
+          Write-Host "=== Debug: pg_config / pgxs / installed files ==="
+          where pg_config || Write-Host "pg_config not found on PATH"
+          try { & pg_config --version } catch { Write-Host "pg_config --version failed" }
+          try { & pg_config --pgxs } catch { Write-Host "pg_config --pgxs failed or pg_config missing" }
+          Write-Host "Listing Program Files\PostgreSQL top-level (if present):"
+          if (Test-Path "C:\Program Files\PostgreSQL") {
+            Get-ChildItem "C:\Program Files\PostgreSQL" -ErrorAction SilentlyContinue | Select-Object -First 20
+          } else {
+            Write-Host "No C:\Program Files\PostgreSQL directory found"
+          }
+          Write-Host "Listing Chocolatey temp dir (if exists):"
+          if (Test-Path "C:\Users\runneradmin\AppData\Local\Temp\chocolatey") {
+            Get-ChildItem "C:\Users\runneradmin\AppData\Local\Temp\chocolatey" -Recurse -Depth 2 | Select-Object -First 30
+          } else {
+            Write-Host "Chocolatey temp dir not present"
+          }
+
       - name: Verify PostgreSQL installation
         run: |
           echo "Verifying PostgreSQL installation..."
           pg_config --version || echo "pg_config not found"
           echo "PostgreSQL installation verified"
         shell: cmd
-      
+
       - name: Build and test extension
         uses: agniswarm/pg-ext-actions/build-check@master
         with:
           working-directory: ./
           operating-system: ${{ matrix.os }}
+
+      # ---------------------
+      # Save Chocolatey cache even if the job fails (if: always())
+      # This caches only Chocolatey downloads, not build artifacts.
+      # ---------------------
+      - name: Save Chocolatey cache
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: C:\Users\runneradmin\AppData\Local\Temp\chocolatey
+          key: choco-postgres-${{ matrix.os }}-pg${{ matrix.pg }}
+
+      # ---------------------
+      # Save PostgreSQL program-files cache even if the job fails
+      # This caches only the Postgres install directories, not your build outputs.
+      # ---------------------
+      - name: Save PostgreSQL program-files cache
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\Program Files\PostgreSQL\${{ matrix.pg }}
+            C:\Users\runneradmin\AppData\Local\Temp\postgresql-setup
+          key: postgresql-${{ matrix.pg }}-${{ matrix.os }}
