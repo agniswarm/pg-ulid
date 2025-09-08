@@ -12,9 +12,15 @@ REGRESS =
 
 # Use pg_config to discover PGXS; fallback to pg_config in PATH
 PG_CONFIG ?= pg_config
-PGXS := $(shell $(PG_CONFIG) --pgxs 2>/dev/null || true)
+# Explicitly get the path to PGXS using pg_config, and fail with a clear error if not found.
+PG_CONFIG_PATH := $(shell which $(PG_CONFIG) 2>/dev/null)
+ifeq ($(PG_CONFIG_PATH),)
+$(error "pg_config not found in PATH. Please install PostgreSQL development packages or set PG_CONFIG. PATH: $(PATH)")
+endif
+
+PGXS := $(shell $(PG_CONFIG) --pgxs 2>/dev/null)
 ifeq ($(PGXS),)
-$(error "pg_config not found or PGXS not available. Install PostgreSQL dev packages or set PG_CONFIG. PATH: $(PATH)")
+$(error "PGXS not available from pg_config ($(PG_CONFIG)). Please ensure PostgreSQL development files are installed. PG_CONFIG: $(PG_CONFIG_PATH)")
 endif
 
 include $(PGXS)
