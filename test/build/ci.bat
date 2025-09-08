@@ -42,42 +42,42 @@ if %errorlevel% neq 0 (
 )
 
 echo Testing ulid function...
-psql -c "SELECT ulid^();" >nul 2>&1
+psql -c "SELECT ulid^();" 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: ulid function test failed
     exit /b 1
 )
 
 echo Testing ulid_random function...
-psql -c "SELECT ulid_random^();" >nul 2>&1
+psql -c "SELECT ulid_random^();" 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: ulid_random function test failed
     exit /b 1
 )
 
 echo Testing ulid_time function...
-psql -c "SELECT ulid_time^(^(extract^(epoch from now^(^)^) * 1000^)::BIGINT^);" >nul 2>&1
+psql -c "SELECT ulid_time^(^(extract^(epoch from now^(^)^) * 1000^)::BIGINT^);" 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: ulid_time function test failed
     exit /b 1
 )
 
 echo Testing ulid_batch function...
-psql -c "SELECT array_length^(ulid_batch^(5^), 1^);" >nul 2>&1
+psql -c "SELECT array_length^(ulid_batch^(5^), 1^);" 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: ulid_batch function test failed
     exit /b 1
 )
 
 echo Testing ulid_random_batch function...
-psql -c "SELECT array_length^(ulid_random_batch^(3^), 1^);" >nul 2>&1
+psql -c "SELECT array_length^(ulid_random_batch^(3^), 1^);" 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: ulid_random_batch function test failed
     exit /b 1
 )
 
 echo Testing ulid_parse function...
-psql -c "SELECT * FROM ulid_parse^('01K4FQ7QN4ZSW0SG5XACGM2HB4'^);" >nul 2>&1
+psql -c "SELECT * FROM ulid_parse^('01K4FQ7QN4ZSW0SG5XACGM2HB4'^);" 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: ulid_parse function test failed
     exit /b 1
