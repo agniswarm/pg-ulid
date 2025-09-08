@@ -61,15 +61,6 @@ jobs:
           version: ${{ matrix.pg }}
           install-contrib: 'true'
           operating-system: ${{ matrix.os }}
-
-      - name: "Debug PostgreSQL Installation"
-        run: |
-            echo "Checking pg_config availability..."
-            which pg_config || echo "pg_config not in PATH"
-            pg_config --version || echo "pg_config not working"
-            echo "PATH: $PATH"
-            echo "PG_CONFIG: $PG_CONFIG"
-        shell: bash
       - name: Debug OS Detection
         run: |
           echo "Detected OS: $(case "macos-15" in ubuntu-*|debian-*|centos-*|rhel-*|fedora-*|suse-*|alpine-*) echo "linux" ;; macos-*|darwin-*) echo "macos" ;; windows-*|win-*) echo "windows" ;; linux|macos|windows) echo "macos-15" ;; *) echo "unknown" ;; esac)"
@@ -101,12 +92,32 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
+      - name: Cache PostgreSQL installation
+        id: cache-postgres
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\Program Files\PostgreSQL\${{ matrix.pg }}
+            C:\Users\runneradmin\AppData\Local\Temp\postgresql-setup
+          key: postgresql-${{ matrix.pg }}-${{ matrix.os }}-${{ hashFiles('**/Makefile.win') }}
+          restore-keys: |
+            postgresql-${{ matrix.pg }}-${{ matrix.os }}-
+            postgresql-${{ matrix.pg }}-
+      
       - name: Setup PostgreSQL
+        if: steps.cache-postgres.outputs.cache-hit != 'true'
         uses: agniswarm/pg-ext-actions/pg-setup@master
         with:
           version: ${{ matrix.pg }}
           install-contrib: 'true'
           operating-system: ${{ matrix.os }}
+      
+      - name: Verify PostgreSQL installation
+        run: |
+          echo "Verifying PostgreSQL installation..."
+          pg_config --version || echo "pg_config not found"
+          echo "PostgreSQL installation verified"
+        shell: cmd
       
       - name: Build and test extension
         uses: agniswarm/pg-ext-actions/build-check@master

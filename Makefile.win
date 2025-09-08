@@ -1,40 +1,101 @@
-# Makefile.win - Windows build for ULID extension
+#
+# Makefile.win - Windows build for PostgreSQL ULID extension
+#
+# Designed to be used with mingw32-make / MSYS / GitHub Actions Windows runners.
+# It prefers PowerShell test script (test\build\ci.ps1), falls back to batch (test\build\ci.bat).
+#
 
 EXTENSION = ulid
 EXTVERSION = 0.1.1
 
-MODULE_big = ulid
+MODULE_big = $(EXTENSION)
 OBJS = src/ulid.o
-
-# Detect PostgreSQL version dynamically
-PG_CONFIG ?= pg_config
-PGROOT := $(shell $(PG_CONFIG) --bindir | sed 's/\\bin$$//')
-
-PG_CPPFLAGS = -I"$(PGROOT)\include\server"
-SHLIB_LINK = -L"$(PGROOT)\lib" -lpostgres
-
 DATA = $(EXTENSION).control sql/$(EXTENSION)--$(EXTVERSION).sql
+REGRESS =
 
-PGXS := $(shell $(PG_CONFIG) --pgxs 2>nul)
-ifeq ($(PGXS),)
-$(error "PGXS not available from pg_config ($(PG_CONFIG)). Please ensure PostgreSQL development files are installed.")
+# pg_config discovery
+PG_CONFIG ?= pg_config
+# try which (msys) then where (Windows), then fallback to literal
+ifeq ($(shell which $(PG_CONFIG) 2>/dev/null || true),)
+  ifeq ($(shell where $(PG_CONFIG) 2>nul || echo,),"")
+    PG_CONFIG_PATH :=
+  else
+    PG_CONFIG_PATH := $(shell where $(PG_CONFIG) 2>nul | head -n 1)
+  endif
+else
+  PG_CONFIG_PATH := $(shell which $(PG_CONFIG) 2>/dev/null | head -n 1)
 endif
+
+ifeq ($(PG_CONFIG_PATH),)
+$(error "pg_config not found in PATH. Please install PostgreSQL development packages or set PG_CONFIG. PATH: $(PATH)")
+endif
+
+# Prefer using pg_config --pgxs
+PGXS := $(shell "$(PG_CONFIG_PATH)" --pgxs 2>nul || true)
+ifeq ($(PGXS),)
+# If pg_config --pgxs is empty, try to derive PGXS from bindir
+BINDIR := $(shell "$(PG_CONFIG_PATH)" --bindir 2>nul || true)
+ifneq ($(BINDIR),)
+  # remove trailing \bin or /bin if present (portable substitution)
+  PGROOT := $(patsubst %/bin,%,$(patsubst %\\bin,%,$(BINDIR)))
+  PGXS := $(PGROOT)/lib/postgresql/pgxs/src/makefiles/pgxs.mk
+endif
+endif
+
+ifeq ($(PGXS),)
+$(error "PGXS not available from pg_config ($(PG_CONFIG)). Please ensure PostgreSQL development files are installed. PG_CONFIG_PATH: $(PG_CONFIG_PATH)")
+endif
+
 include $(PGXS)
 
-# Custom targets for Windows
+# Optional: point to ulid-c include/lib if you want to use it
+ULID_C_DIR ?=
+ifdef ULID_C_DIR
+  ULID_C_INCDIR = -I"$(subst /,\\,$(ULID_C_DIR))/include"
+  ULID_C_LIBDIR = -L"$(subst /,\\,$(ULID_C_DIR))/lib"
+  ULID_C_LIBS   = -lulid
+else
+  ULID_C_INCDIR =
+  ULID_C_LIBDIR =
+  ULID_C_LIBS =
+endif
+
+TARGET_ARCH ?= $(shell uname -m 2>/dev/null || echo x86_64)
+ARCH_FLAGS :=
+ifeq ($(TARGET_ARCH), i386)
+  ARCH_FLAGS += -m32
+endif
+
+OPTFLAGS ?= -O2
+
+PG_CFLAGS += $(OPTFLAGS) $(ARCH_FLAGS) -std=gnu11 -fno-lto -fno-fat-lto-objects \
+             -Wno-unused-variable -Wno-unused-function
+
+# On Windows with MinGW, HOSTCC is typically gcc; fall back to cc if missing
+CC ?= $(HOSTCC)
+ifndef CC
+  CC = gcc
+endif
+
+# Compile rule (works in msys/mingw)
+src/%.o: src/%.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) $(ULID_C_INCDIR) -c $< -o $@
+
 installcheck: all
-    @echo "Running tests on Windows..."
-    @echo "PG_CONFIG: $(PG_CONFIG)"
-    @echo "PGROOT: $(PGROOT)"
-    @echo "PGXS: $(PGXS)"
-    set PGPORT=5432
-    set PGHOST=localhost
-    set PGUSER=postgres
-    "$(PGROOT)\bin\pg_regress" --inputdir=test --load-language=plpgsql --dbname=postgres --outputdir=./results --temp-instance=./tmp_check $(REGRESS)
+	@echo "Running batch test script..."
+	cmd.exe /C "cd /d %CD% && test\\build\\ci.bat"
+
+# Windows clean, uninstall, etc.
+.PHONY: all install installcheck uninstall clean
 
 clean:
-    del /q $(OBJS) $(EXTENSION).dll 2>nul
-    if exist results rmdir /s /q results
-    if exist tmp_check rmdir /s /q tmp_check
-    if exist regression.diffs del regression.diffs
-    if exist regression.out del regression.out
+	-@echo "Deleting object and artifact files..."
+	-@if exist src\\ulid.o del /q src\\ulid.o 2>nul || true
+	-@if exist $(EXTENSION).dll del /q $(EXTENSION).dll 2>nul || true
+	-@if exist results rmdir /s /q results 2>nul || true
+	-@if exist tmp_check rmdir /s /q tmp_check 2>nul || true
+	-@if exist regression.diffs del /q regression.diffs 2>nul || true
+	-@if exist regression.out del /q regression.out 2>nul || true
+
+# Make sure .PHONY is visible for these targets
+all-local: all
