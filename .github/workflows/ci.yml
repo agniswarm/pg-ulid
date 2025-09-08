@@ -99,40 +99,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ---------------------
-      # Restore Chocolatey download cache early (so choco reuses installers)
-      # NOTE: this caches only Chocolatey temp downloads, not build outputs.
-      # ---------------------
-      - name: Restore Chocolatey cache
-        uses: actions/cache@v4
-        with:
-          path: C:\Users\runneradmin\AppData\Local\Temp\chocolatey
-          key: choco-postgres-${{ matrix.os }}-pg${{ matrix.pg }}
-          restore-keys: |
-            choco-postgres-${{ matrix.os }}-pg${{ matrix.pg }}
-            choco-postgres-${{ matrix.os }}-
-            choco-postgres-
-
-      # ---------------------
-      # Restore Program Files Postgres cache (program files installation snapshot)
-      # We cache the Program Files/Postgres install directory to avoid re-running the installer.
-      # ---------------------
-      - name: Restore PostgreSQL program-files cache
-        id: cache-postgres
-        uses: actions/cache@v4
-        with:
-          path: |
-            C:\Program Files\PostgreSQL\${{ matrix.pg }}
-            C:\Users\runneradmin\AppData\Local\Temp\postgresql-setup
-          key: postgresql-${{ matrix.pg }}-${{ matrix.os }}
-          restore-keys: |
-            postgresql-${{ matrix.pg }}-${{ matrix.os }}
-            postgresql-${{ matrix.pg }}-
-            postgresql-
-
-      # Only run the full setup if program-files cache didn't hit
       - name: Setup PostgreSQL (Windows)
-        if: steps.cache-postgres.outputs.cache-hit != 'true'
         uses: agniswarm/pg-ext-actions/pg-setup@master
         with:
           version: ${{ matrix.pg }}
@@ -179,27 +146,3 @@ jobs:
         with:
           working-directory: ./
           operating-system: ${{ matrix.os }}
-
-      # ---------------------
-      # Save Chocolatey cache even if the job fails (if: always())
-      # This caches only Chocolatey downloads, not build artifacts.
-      # ---------------------
-      - name: Save Chocolatey cache
-        if: always()
-        uses: actions/cache@v4
-        with:
-          path: C:\Users\runneradmin\AppData\Local\Temp\chocolatey
-          key: choco-postgres-${{ matrix.os }}-pg${{ matrix.pg }}
-
-      # ---------------------
-      # Save PostgreSQL program-files cache even if the job fails
-      # This caches only the Postgres install directories, not your build outputs.
-      # ---------------------
-      - name: Save PostgreSQL program-files cache
-        if: always()
-        uses: actions/cache@v4
-        with:
-          path: |
-            C:\Program Files\PostgreSQL\${{ matrix.pg }}
-            C:\Users\runneradmin\AppData\Local\Temp\postgresql-setup
-          key: postgresql-${{ matrix.pg }}-${{ matrix.os }}
