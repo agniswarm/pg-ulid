@@ -56,6 +56,7 @@ src/%.o: src/%.c
 # Custom installcheck: run our own CI script
 installcheck: all
 	@echo "Running extension tests via test/build/ci.sh..."
+	@echo "Data files: $(DATA)"
 	@if [ -f "test/build/ci.sh" ]; then \
 		bash test/build/ci.sh; \
 	else \
