@@ -35,93 +35,51 @@ set PGDATABASE=postgres
 
 REM Test basic extension functionality
 echo Creating extension...
-echo Checking if extension files exist...
-if exist "C:\Program Files\PostgreSQL\14\share\extension\ulid.control" (
-    echo Found ulid.control
-) else (
-    echo ERROR: ulid.control not found
-    exit /b 1
-)
-if exist "C:\Program Files\PostgreSQL\14\share\extension\ulid--0.1.1.sql" (
-    echo Found ulid--0.1.1.sql
-) else (
-    echo ERROR: ulid--0.1.1.sql not found
-    exit /b 1
-)
-if exist "C:\Program Files\PostgreSQL\14\lib\ulid.dll" (
-    echo Found ulid.dll
-) else (
-    echo ERROR: ulid.dll not found
-    exit /b 1
-)
-
-echo Testing PostgreSQL connection with detailed error...
-psql -c "SELECT version();" 2>&1
-if %errorlevel% neq 0 (
-    echo ERROR: Cannot connect to PostgreSQL. Make sure it's running.
-    echo Try: net start postgresql-x64-14
-    exit /b 1
-)
-
-echo Creating extension...
-echo Checking DLL exports...
-dumpbin /exports "C:\Program Files\PostgreSQL\14\lib\ulid.dll" | findstr ulid
-if %errorlevel% neq 0 (
-    echo WARNING: Could not check DLL exports (dumpbin not available)
-)
-
 psql -c "CREATE EXTENSION IF NOT EXISTS ulid;" 2>&1
 if %errorlevel% neq 0 (
-    echo ERROR: Failed to create extension. Make sure it's properly installed.
-    echo Check that the extension files are in the correct location:
-    echo   - C:\Program Files\PostgreSQL\14\share\extension\ulid.control
-    echo   - C:\Program Files\PostgreSQL\14\share\extension\ulid--0.1.1.sql
-    echo   - C:\Program Files\PostgreSQL\14\lib\ulid.dll
-    echo.
-    echo Trying to load the module manually to see detailed error...
-    psql -c "LOAD 'ulid';" 2>&1
+    echo ERROR: Failed to create extension.
     exit /b 1
 )
 
-echo Testing ulid() function...
-psql -c "SELECT ulid();" >nul 2>&1
+echo Testing ulid function...
+psql -c "SELECT ulid^();" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo ERROR: ulid() function test failed
+    echo ERROR: ulid function test failed
     exit /b 1
 )
 
-echo Testing ulid_random() function...
-psql -c "SELECT ulid_random();" >nul 2>&1
+echo Testing ulid_random function...
+psql -c "SELECT ulid_random^();" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo ERROR: ulid_random() function test failed
+    echo ERROR: ulid_random function test failed
     exit /b 1
 )
 
-echo Testing ulid_time() function...
-psql -c "SELECT ulid_time((extract(epoch from now()) * 1000)::BIGINT);" >nul 2>&1
+echo Testing ulid_time function...
+psql -c "SELECT ulid_time^(^(extract^(epoch from now^(^)^) * 1000^)::BIGINT^);" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo ERROR: ulid_time() function test failed
+    echo ERROR: ulid_time function test failed
     exit /b 1
 )
 
-echo Testing ulid_batch() function...
-psql -c "SELECT array_length(ulid_batch(5), 1);" >nul 2>&1
+echo Testing ulid_batch function...
+psql -c "SELECT array_length^(ulid_batch^(5^), 1^);" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo ERROR: ulid_batch() function test failed
+    echo ERROR: ulid_batch function test failed
     exit /b 1
 )
 
-echo Testing ulid_random_batch() function...
-psql -c "SELECT array_length(ulid_random_batch(3), 1);" >nul 2>&1
+echo Testing ulid_random_batch function...
+psql -c "SELECT array_length^(ulid_random_batch^(3^), 1^);" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo ERROR: ulid_random_batch() function test failed
+    echo ERROR: ulid_random_batch function test failed
     exit /b 1
 )
 
-echo Testing ulid_parse() function...
-psql -c "SELECT * FROM ulid_parse('01K4FQ7QN4ZSW0SG5XACGM2HB4');" >nul 2>&1
+echo Testing ulid_parse function...
+psql -c "SELECT * FROM ulid_parse^('01K4FQ7QN4ZSW0SG5XACGM2HB4'^);" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo ERROR: ulid_parse() function test failed
+    echo ERROR: ulid_parse function test failed
     exit /b 1
 )
 
