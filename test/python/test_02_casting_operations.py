@@ -289,3 +289,28 @@ def test_comprehensive_casts_report(db):
         cur.execute(q)
         r = cur.fetchone()
     assert r is not None and all(r), f"Not all comprehensive casting operations succeeded: {r}"
+
+def test_direct_timestamp_to_ulid_casting():
+    """Test direct timestamp to ULID casting (should be faster than chained)."""
+    test_timestamp = '2025-07-24'
+    
+    with db.cursor() as cur:
+        # Test direct casting
+        cur.execute(f"SELECT '{test_timestamp}'::timestamp::ulid as result")
+        result = cur.fetchone()
+        assert result is not None, "Direct casting returned NULL"
+        
+        ulid_result = result[0]
+        assert ulid_result is not None, "ULID result is NULL"
+        
+        # Verify the ULID can be converted back to timestamp
+        cur.execute("SELECT %s::ulid::timestamp as back_to_timestamp", (ulid_result,))
+        back_to_timestamp = cur.fetchone()[0]
+        assert back_to_timestamp is not None, "ULID to timestamp conversion failed"
+        
+        # The timestamp should be close to the original
+        original_ts = datetime.strptime(test_timestamp, '%Y-%m-%d')
+        diff_seconds = abs((back_to_timestamp - original_ts).total_seconds())
+        assert diff_seconds < 1.0, f"Timestamp conversion error: {diff_seconds} seconds difference"
+        
+        print(f"✅ Direct casting works: '{test_timestamp}'::timestamp::ulid = {ulid_result}")

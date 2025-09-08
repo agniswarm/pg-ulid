@@ -23,6 +23,3 @@ RUN apt-get update && \
 		apt-get autoremove -y && \
 		apt-mark unhold locales && \
 		rm -rf /var/lib/apt/lists/*
-
-# Create a custom entrypoint script that initializes the database with ULID extension
-COPY docker-entrypoint-initdb.d/ /docker-entrypoint-initdb.d/
