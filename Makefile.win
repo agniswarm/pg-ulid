@@ -29,7 +29,7 @@ CFLAGS = $(CFLAGS) $(PG_CFLAGS)
 
 SHLIB = $(EXTENSION).dll
 
-LIBS = "$(LIBDIR)\postgres.lib"
+LIBS = "$(LIBDIR)\postgres.lib" advapi32.lib
 
 all: $(SHLIB) $(DATA_built)
 
