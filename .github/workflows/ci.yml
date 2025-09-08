@@ -138,6 +138,8 @@ jobs:
           version: ${{ matrix.pg }}
           install-contrib: 'true'
           operating-system: ${{ matrix.os }}
+      - name: Setup MSVC Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
 
       - name: "Debug: show pg_config and pgxs and Postgres dir"
         shell: pwsh
