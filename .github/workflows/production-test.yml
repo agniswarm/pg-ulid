@@ -1,4 +1,4 @@
-name: test functionality
+name: Test Functionality
 
 on:
   [push, pull_request]
