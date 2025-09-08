@@ -70,6 +70,14 @@ jobs:
             echo "PATH: $PATH"
             echo "PG_CONFIG: $PG_CONFIG"
         shell: bash
+      - name: Debug OS Detection
+        run: |
+          echo "Input OS: macos-15"
+          echo "Detected OS: $(case "macos-15" in ubuntu-*|debian-*|centos-*|rhel-*|fedora-*|suse-*|alpine-*) echo "linux" ;; macos-*|darwin-*) echo "macos" ;; windows-*|win-*) echo "windows" ;; linux|macos|windows) echo "macos-15" ;; *) echo "unknown" ;; esac)"
+          echo "Checking pg_config paths..."
+          ls -la /opt/homebrew/bin/pg_config 2>/dev/null || echo "/opt/homebrew/bin/pg_config not found"
+          ls -la /usr/local/bin/pg_config 2>/dev/null || echo "/usr/local/bin/pg_config not found"
+        shell: bash
       
       - name: Build and test extension
         uses: agniswarm/pg-ext-actions/build-check@master
