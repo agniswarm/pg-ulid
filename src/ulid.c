@@ -35,26 +35,7 @@
  
  PG_MODULE_MAGIC;
  
- /* forward declarations */
- Datum ulid_in(PG_FUNCTION_ARGS);
- Datum ulid_out(PG_FUNCTION_ARGS);
- Datum ulid_send(PG_FUNCTION_ARGS);
- Datum ulid_recv(PG_FUNCTION_ARGS);
- Datum ulid_cmp(PG_FUNCTION_ARGS);
- Datum ulid_generate(PG_FUNCTION_ARGS);
- Datum ulid_generate_monotonic(PG_FUNCTION_ARGS);
- Datum ulid_generate_with_timestamp(PG_FUNCTION_ARGS);
- Datum ulid_timestamp(PG_FUNCTION_ARGS);
- Datum ulid_to_uuid(PG_FUNCTION_ARGS);
- Datum ulid_from_uuid(PG_FUNCTION_ARGS);
- Datum ulid_hash(PG_FUNCTION_ARGS);
- 
- Datum ulid_lt(PG_FUNCTION_ARGS);
- Datum ulid_le(PG_FUNCTION_ARGS);
- Datum ulid_eq(PG_FUNCTION_ARGS);
- Datum ulid_ne(PG_FUNCTION_ARGS);
- Datum ulid_ge(PG_FUNCTION_ARGS);
- Datum ulid_gt(PG_FUNCTION_ARGS);
+/* forward declarations removed - using PG_FUNCTION_INFO_V1 instead */
  
  typedef struct ULID {
      unsigned char data[16];
