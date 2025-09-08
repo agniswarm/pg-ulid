@@ -1,89 +1,107 @@
 EXTENSION = ulid
 EXTVERSION = 0.1.1
 
-MODULE_big = $(EXTENSION)
-OBJS = src/ulid.obj
-DATA = $(EXTENSION).control sql/$(EXTENSION)--$(EXTVERSION).sql
-REGRESS =
+DATA_built = sql\$(EXTENSION)--$(EXTVERSION).sql
+OBJS = src\ulid.obj
+HEADERS = 
 
-# Toolchain
-CC = cl
-AR = lib
-RM = del /q
-MKDIR_P = mkdir
+REGRESS = 
+REGRESS_OPTS = --inputdir=test --load-extension=$(EXTENSION)
 
-# Try to find pg_config and PGXS
+# For /arch flags
+# https://learn.microsoft.com/en-us/cpp/build/reference/arch-minimum-cpu-architecture
+OPTFLAGS =
+
+# For auto-vectorization:
+# - MSVC (needs /O2 /fp:fast) - https://learn.microsoft.com/en-us/cpp/parallel/auto-parallelization-and-auto-vectorization?#auto-vectorizer
+PG_CFLAGS = $(PG_CFLAGS) $(OPTFLAGS) /O2 /fp:fast
+
+# Debug MSVC auto-vectorization
+# https://learn.microsoft.com/en-us/cpp/error-messages/tool-errors/vectorizer-and-parallelizer-messages
+# PG_CFLAGS = $(PG_CFLAGS) /Qvec-report:2
+
+# Try to find pg_config and PGXS first
 PG_CONFIG = pg_config
 PG_CONFIG_PATH = $(shell where $(PG_CONFIG) 2>nul)
 PGXS = $(shell $(PG_CONFIG) --pgxs 2>nul)
 
-!IF "$(PGXS)" == ""
-  # PGXS not found, use manual rules
-  # Try to derive include/lib paths from pg_config (if available)
-  !IF "$(PG_CONFIG_PATH)" != ""
-    PG_INCLUDEDIR = $(shell $(PG_CONFIG) --includedir-server 2>nul)
-    PG_LIBDIR     = $(shell $(PG_CONFIG) --libdir 2>nul)
-    PG_PKGLIBDIR  = $(shell $(PG_CONFIG) --pkglibdir 2>nul)
-  !ELSE
-    PG_INCLUDEDIR = C:\Program Files\PostgreSQL\$(EXTVERSION)\include
-    PG_LIBDIR     = C:\Program Files\PostgreSQL\$(EXTVERSION)\lib
-    PG_PKGLIBDIR  = C:\Program Files\PostgreSQL\$(EXTVERSION)\lib
-  !ENDIF
-
-  # Prefer server include if present
-  PG_SERVER_INC = $(PG_INCLUDEDIR)\server
-  !IF EXIST("$(PG_SERVER_INC)")
-    PG_CPPFLAGS = /I"$(PG_SERVER_INC)"
-  !ELSE
-    PG_CPPFLAGS = /I"$(PG_INCLUDEDIR)"
-  !ENDIF
-
-  # Compiler & flags
-  CFLAGS = /O2 /std:c11 /DWIN32 /D_WINDOWS /Wall /WX-
-  LDFLAGS = /DLL
-
-  # Link libs: try to link against postgres server library; fallback to libpq
-  LIBS = /LIBPATH:"$(PG_LIBDIR)" postgres.lib
-
-  # Pattern rule: compile C -> object
-  src\%.obj: src\%.c
-	@$(MKDIR_P) $(@D) 2>nul
-	$(CC) $(CFLAGS) $(PG_CPPFLAGS) /c $< /Fo$@
-
-  # Link DLL
-  $(EXTENSION).dll: $(OBJS)
-	@echo Linking $(EXTENSION).dll
-	$(CC) $(LDFLAGS) /OUT:$@ $(OBJS) $(LIBS)
-
-  # Default target
-  all: $(EXTENSION).dll
-	@echo "Build complete: $(EXTENSION).dll"
-
-  # Install target (optional): copy into PG pkglibdir if known
-  install: $(EXTENSION).dll
-  !IF "$(PG_PKGLIBDIR)" != ""
-	@echo "Installing $(EXTENSION).dll into $(PG_PKGLIBDIR)"
-	@copy $(EXTENSION).dll "$(PG_PKGLIBDIR)\$(EXTENSION).dll" || echo "warning: copy failed; may need permissions"
-  !ELSE
-	@echo "PG_PKGLIBDIR not detected; skipping install copy step"
-  !ENDIF
-
-  # installcheck target: run Windows CI batch tests
-  installcheck: all
-	@echo "Running Windows CI batch test script..."
-	cmd.exe /C "cd /d %CD% && test\build\ci.bat"
-
-  # Clean
-  clean:
-	@echo "Cleaning artifacts..."
-	@$(RM) $(OBJS) $(EXTENSION).dll regression.diffs regression.out 2>nul
-	@if exist results rmdir /s /q results 2>nul
-	@if exist tmp_check rmdir /s /q tmp_check 2>nul
-!ELSE
+!if "$(PGXS)" != ""
   # PGXS found, include it
   !INCLUDE $(PGXS)
   # When PGXS is used, the standard targets (all, install, installcheck, clean) are provided.
   # We still provide a few convenience aliases below to keep compatibility.
-!ENDIF
+!else
+  # PGXS not found, use manual rules
+  # Try to derive include/lib paths from pg_config (if available)
+  !if "$(PG_CONFIG_PATH)" != ""
+    PGROOT = $(shell $(PG_CONFIG) --pgdata 2>nul | sed 's/\\data$$//')
+    BINDIR = $(shell $(PG_CONFIG) --bindir 2>nul)
+    INCLUDEDIR = $(shell $(PG_CONFIG) --includedir 2>nul)
+    INCLUDEDIR_SERVER = $(shell $(PG_CONFIG) --includedir-server 2>nul)
+    LIBDIR = $(shell $(PG_CONFIG) --libdir 2>nul)
+    PKGLIBDIR = $(shell $(PG_CONFIG) --pkglibdir 2>nul)
+    SHAREDIR = $(shell $(PG_CONFIG) --sharedir 2>nul)
+  !else
+    # Fallback paths
+    PGROOT = C:\Program Files\PostgreSQL\$(EXTVERSION)
+    BINDIR = $(PGROOT)\bin
+    INCLUDEDIR = $(PGROOT)\include
+    INCLUDEDIR_SERVER = $(PGROOT)\include\server
+    LIBDIR = $(PGROOT)\lib
+    PKGLIBDIR = $(PGROOT)\lib
+    SHAREDIR = $(PGROOT)\share
+  !endif
 
-.PHONY: all install installcheck clean
+  # Use $(PGROOT)\bin\pg_regress for Postgres < 17
+  PG_REGRESS = $(LIBDIR)\pgxs\src\test\regress\pg_regress
+
+  CFLAGS = /nologo /I"$(INCLUDEDIR_SERVER)\port\win32_msvc" /I"$(INCLUDEDIR_SERVER)\port\win32" /I"$(INCLUDEDIR_SERVER)" /I"$(INCLUDEDIR)"
+
+  CFLAGS = $(CFLAGS) $(PG_CFLAGS)
+
+  SHLIB = $(EXTENSION).dll
+
+  LIBS = "$(LIBDIR)\postgres.lib"
+
+  all: $(SHLIB) $(DATA_built)
+
+  .c.obj:
+	$(CC) $(CFLAGS) /c $< /Fo$@
+
+  $(SHLIB): $(OBJS)
+	$(CC) $(CFLAGS) $(OBJS) $(LIBS) /link /DLL /OUT:$(SHLIB)
+
+  sql\$(EXTENSION)--$(EXTVERSION).sql: sql\$(EXTENSION).sql
+	copy sql\$(EXTENSION).sql $@
+
+  install: all
+	copy $(SHLIB) "$(PKGLIBDIR)"
+	copy $(EXTENSION).control "$(SHAREDIR)\extension"
+	copy sql\$(EXTENSION)--*.sql "$(SHAREDIR)\extension"
+	!if "$(HEADERS)" != ""
+	mkdir "$(INCLUDEDIR_SERVER)\extension\$(EXTENSION)"
+	for %f in ($(HEADERS)) do copy %f "$(INCLUDEDIR_SERVER)\extension\$(EXTENSION)"
+	!endif
+
+  # installcheck target: run Windows CI batch tests (keeping our custom test)
+  installcheck: all
+	@echo "Running Windows CI batch test script..."
+	cmd.exe /C "cd /d %CD% && test\build\ci.bat"
+
+  uninstall:
+	del /f "$(PKGLIBDIR)\$(SHLIB)"
+	del /f "$(SHAREDIR)\extension\$(EXTENSION).control"
+	del /f "$(SHAREDIR)\extension\$(EXTENSION)--*.sql"
+	!if "$(HEADERS)" != ""
+	del /f "$(INCLUDEDIR_SERVER)\extension\$(EXTENSION)\*.h"
+	rmdir "$(INCLUDEDIR_SERVER)\extension\$(EXTENSION)"
+	!endif
+
+  clean:
+	del /f $(SHLIB) $(EXTENSION).lib $(EXTENSION).exp
+	del /f $(DATA_built)
+	del /f $(OBJS)
+	del /f /s /q results regression.diffs regression.out tmp_check tmp_check_iso log output_iso
+!endif
+
+.PHONY: all install installcheck uninstall clean
