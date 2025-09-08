@@ -79,47 +79,6 @@ jobs:
         with:
           working-directory: ./
           operating-system: ${{ matrix.os }}
-
-  # windows:
-  #   name: Windows Builds
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       include:
-  #         - pg: 17
-  #           os: windows-2025
-  #         - pg: 14
-  #           os: windows-2022
-
-  #   runs-on: ${{ matrix.os }}
-  #   env:
-  #     PG_VERSION: ${{ matrix.pg }}
-
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
-
-  #     - name: Setup PostgreSQL (Windows)
-  #       uses: agniswarm/pg-ext-actions/pg-setup@master
-  #       with:
-  #         version: ${{ matrix.pg }}
-  #         install-contrib: 'true'
-  #         operating-system: ${{ matrix.os }}
-  #     # - name: Setup MSVC Developer Command Prompt
-  #     #   uses: ilammy/msvc-dev-cmd@v1
-  #     - name: Verify PostgreSQL installation
-  #       run: |
-  #         echo "Verifying PostgreSQL installation..."
-  #         pg_config --version || echo "pg_config not found"
-  #         echo "PostgreSQL installation verified"
-  #       shell: cmd
-
-  #     - name: Build and test extension
-  #       uses: agniswarm/pg-ext-actions/build-check@master
-  #       with:
-  #         working-directory: ./
-  #         operating-system: ${{ matrix.os }}
-
   windows:
     runs-on: ${{ matrix.os }}
     if: ${{ !startsWith(github.ref_name, 'mac') }}
@@ -144,5 +103,3 @@ jobs:
           nmake /NOLOGO /F Makefile.win clean && ^
           nmake /NOLOGO /F Makefile.win uninstall
         shell: cmd
-      - if: ${{ failure() }}
-        run: cat regression.diffs
