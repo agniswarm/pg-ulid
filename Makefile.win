@@ -2,8 +2,8 @@ EXTENSION=ulid
 EXTVERSION=0.1.1
 
 MODULE_big=$(EXTENSION)
-OBJS=src\ulid.obj
-DATA=$(EXTENSION).control sql\$(EXTENSION)--$(EXTVERSION).sql
+OBJS=src/ulid.obj
+DATA=$(EXTENSION).control sql/$(EXTENSION)--$(EXTVERSION).sql
 
 # nmake cannot execute shell during parse-time. PGXS must be supplied externally.
 
@@ -15,9 +15,9 @@ DATA=$(EXTENSION).control sql\$(EXTENSION)--$(EXTVERSION).sql
 
 # Optional ULID_C_DIR (set externally if needed)
 !IF "$(ULID_C_DIR)" != ""
-ULID_C_INCDIR=-I"$(ULID_C_DIR)\include"
-ULID_C_LIBDIR=-L"$(ULID_C_DIR)\lib"
-ULID_C_LIBS  =-lulid
+ULID_C_INCDIR=-I"$(ULID_C_DIR)/include"
+ULID_C_LIBDIR=-L"$(ULID_C_DIR)/lib"
+ULID_C_LIBS=-lulid
 !ELSE
 ULID_C_INCDIR=
 ULID_C_LIBDIR=
@@ -31,10 +31,10 @@ PG_CFLAGS=/O2
 CC=cl
 !ENDIF
 
-# Compile src\ulid.c -> src\ulid.obj using MSVC cl
-src\ulid.obj: src\ulid.c
-	@echo Compiling src\ulid.c
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) $(ULID_C_INCDIR) /c src\ulid.c /Fo:src\ulid.obj
+# Compile src/ulid.c -> src/ulid.obj using MSVC cl
+src/ulid.obj: src/ulid.c
+	@echo Compiling src/ulid.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) $(ULID_C_INCDIR) /c src/ulid.c /Fo:src/ulid.obj
 
 # 'all' target - ensure object exists; leave linking to PGXS include
 all: $(OBJS)
@@ -43,11 +43,11 @@ all: $(OBJS)
 # installcheck: run the Windows batch test script
 installcheck: all
 	@echo Running Windows CI batch test script...
-	cmd.exe /C "cd /d %CD% && test\build\ci.bat"
+	cmd.exe /C "cd /d %CD% && test/build/ci.bat"
 
 clean:
 	-@echo Cleaning artifacts...
-	-@if exist src\ulid.obj del /q src\ulid.obj 2>nul
+	-@if exist src\\ulid.obj del /q src\\ulid.obj 2>nul
 	-@if exist $(EXTENSION).dll del /q $(EXTENSION).dll 2>nul
 	-@if exist results rmdir /s /q results 2>nul
 	-@if exist tmp_check rmdir /s /q tmp_check 2>nul
