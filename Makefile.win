@@ -1,7 +1,7 @@
 EXTENSION = ulid
 EXTVERSION = 0.1.1
 
-DATA_built = sql\$(EXTENSION)--$(EXTVERSION).sql
+DATA_built = 
 OBJS = src\ulid.obj
 HEADERS = ulid.h
 
@@ -39,8 +39,7 @@ all: $(SHLIB) $(DATA_built)
 $(SHLIB): $(OBJS)
 	$(CC) $(CFLAGS) $(OBJS) $(LIBS) /link /DLL /OUT:$(SHLIB)
 
-sql\$(EXTENSION)--$(EXTVERSION).sql: sql\$(EXTENSION).sql
-	copy sql\$(EXTENSION).sql $@
+# SQL file already exists, no need to copy
 
 install: all
 	copy $(SHLIB) "$(PKGLIBDIR)"
