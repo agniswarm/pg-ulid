@@ -37,7 +37,7 @@ all: $(SHLIB) $(DATA_built)
 	$(CC) $(CFLAGS) /c $< /Fo$@
 
 $(SHLIB): $(OBJS)
-	$(CC) $(CFLAGS) $(OBJS) $(LIBS) /link /DLL /OUT:$(SHLIB)
+	$(CC) $(CFLAGS) $(OBJS) $(LIBS) /link /DLL /DEF:ulid.def /OUT:$(SHLIB)
 
 # SQL file already exists, no need to copy
 

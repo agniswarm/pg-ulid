@@ -64,6 +64,12 @@ if %errorlevel% neq 0 (
 )
 
 echo Creating extension...
+echo Checking DLL exports...
+dumpbin /exports "C:\Program Files\PostgreSQL\14\lib\ulid.dll" | findstr ulid
+if %errorlevel% neq 0 (
+    echo WARNING: Could not check DLL exports (dumpbin not available)
+)
+
 psql -c "CREATE EXTENSION IF NOT EXISTS ulid;" 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: Failed to create extension. Make sure it's properly installed.
@@ -71,6 +77,9 @@ if %errorlevel% neq 0 (
     echo   - C:\Program Files\PostgreSQL\14\share\extension\ulid.control
     echo   - C:\Program Files\PostgreSQL\14\share\extension\ulid--0.1.1.sql
     echo   - C:\Program Files\PostgreSQL\14\lib\ulid.dll
+    echo.
+    echo Trying to load the module manually to see detailed error...
+    psql -c "LOAD 'ulid';" 2>&1
     exit /b 1
 )
 
