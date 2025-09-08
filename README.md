@@ -290,7 +290,7 @@ Scale horizontally with [replicas](https://www.postgresql.org/docs/current/hot-s
 
 ## Troubleshooting
 
-#### Why isn't a query using an index on ULID columns?
+### Why isn't a query using an index on ULID columns?
 
 ULID columns can use standard B-tree indexes for ordering and range queries. Make sure you have an index:
 
