@@ -11,10 +11,8 @@ EXTVERSION = 0.1.1
 MODULE_big = $(EXTENSION)
 OBJS = src\ulid.obj
 DATA = $(EXTENSION).control sql\$(EXTENSION)--$(EXTVERSION).sql
-REGRESS =
 
 # nmake cannot execute shell during parse-time. PGXS must be supplied externally.
-PG_CONFIG = pg_config
 
 !IF "$(PGXS)" == ""
 !ERROR "PGXS not set. Please set environment variable PGXS to the full path of pgxs.mk."
@@ -23,15 +21,14 @@ PG_CONFIG = pg_config
 !INCLUDE $(PGXS)
 
 # Optional ULID_C_DIR (set externally if needed)
-ULID_C_DIR =
 !IF "$(ULID_C_DIR)" != ""
 ULID_C_INCDIR = -I"$(ULID_C_DIR)\include"
 ULID_C_LIBDIR = -L"$(ULID_C_DIR)\lib"
 ULID_C_LIBS   = -lulid
 !ELSE
-ULID_C_INCDIR =
-ULID_C_LIBDIR =
-ULID_C_LIBS =
+ULID_C_INCDIR=
+ULID_C_LIBDIR=
+ULID_C_LIBS=
 !ENDIF
 
 # Compiler flags - MSVC defaults; change if you want to use gcc/mingw
