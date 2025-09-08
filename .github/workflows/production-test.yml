@@ -27,6 +27,15 @@ jobs:
         # Wait for PostgreSQL to be ready
         timeout 60 bash -c 'until docker exec ulid-prod-test pg_isready -U postgres; do sleep 2; done'
         
+        # Verify database connection
+        docker exec ulid-prod-test psql -U postgres -d testdb -c "SELECT version();"
+        
+        # Create ULID extension
+        docker exec ulid-prod-test psql -U postgres -d testdb -c "CREATE EXTENSION IF NOT EXISTS ulid;"
+        
+        # Verify ULID extension is available
+        docker exec ulid-prod-test psql -U postgres -d testdb -c "SELECT ulid() as test_ulid;"
+        
     - name: Install Python dependencies
       run: |
         sudo apt-get update
@@ -36,7 +45,7 @@ jobs:
     - name: Run Python tests
       run: |
         cd test/python
-        python3 -m pytest . -v
+        PGHOST=localhost PGDATABASE=testdb PGUSER=postgres PGPASSWORD=testpass PGPORT=5432 python3 -m pytest . -v
         
     - name: Cleanup
       if: always()
