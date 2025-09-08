@@ -50,6 +50,9 @@ def type_exists(conn, type_name: str) -> bool:
         cur.execute(q, (type_name,))
         return cur.fetchone()[0]
 
+# Safety cap for stress tests (default 100k). Raise ULID_STRESS_MAX env var to run heavier tests.
+ULID_STRESS_MAX = int(os.getenv("ULID_STRESS_MAX", "100000"))
+
 # ---------------------------------------------------------------------
 # DB fixture
 # ---------------------------------------------------------------------
@@ -90,19 +93,6 @@ def require_ulid_extension(db_conn):
 # ---------------------------------------------------------------------
 def test_preconditions(db):
     require_ulid_extension(db)
-
-# ---------------------------------------------------------------------
-# Fixed tests
-# ---------------------------------------------------------------------
-# Note: test_ulid_time_and_parse moved to test_01_basic_functionality.py
-
-# Note: test_text_round_trip_preserves_value moved to test_02_casting_operations.py
-
-# Note: test_batch_casting_uniqueness moved to test_02_casting_operations.py
-
-# Note: test_load_generation_count moved to test_03_monotonic_generation.py
-
-# Note: test_final_basic_checks moved to test_03_monotonic_generation.py
 
 # ---------------------------------------------------------------------
 # Stress tests (skips if ULID_STRESS_MAX is too low)

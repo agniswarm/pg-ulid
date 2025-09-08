@@ -1,361 +1,280 @@
-# pg-ulid
+# PostgreSQL ULID Extension
 
-Open-source ULID generation for Postgres
+A PostgreSQL extension that provides ULID (Universally Unique Lexicographically Sortable Identifier) support with full type integration, casting operations, and comprehensive functionality.
 
-Generate Universally Unique Lexicographically Sortable Identifiers (ULIDs) directly in PostgreSQL using **the** [oklog/ulid/v2](https://github.com/oklog/ulid) library. Supports:
+## Features
 
-- monotonic ULIDs for guaranteed ordering within same millisecond
-- time-based ULID generation with custom timestamps
-- batch generation for high-throughput scenarios
-- ULID parsing and validation
-- any [language](#languages) with a Postgres client
-
-Plus [ACID](https://en.wikipedia.org/wiki/ACID) compliance, point-in-time recovery, JOINs, and all of the other [great features](https://www.postgresql.org/about/) of Postgres
-
-[![Build Status](https://github.com/agniswarm/pg-ulid/actions/workflows/ci.yml/badge.svg)](https://github.com/agniswarm/pg-ulid/actions)
+- **Custom ULID Type**: Native PostgreSQL type with 16-byte binary storage
+- **Generation Functions**: Random, monotonic, and timestamp-based ULID generation
+- **Casting Support**: Seamless conversion between ULID, text, timestamp, timestamptz, UUID, and bytea
+- **Comparison Operators**: Full set of comparison operators for sorting and indexing
+- **Timestamp Extraction**: Extract millisecond timestamps from ULIDs
+- **Cross-Platform**: Works on Linux, macOS, and Windows
+- **Performance Optimized**: Efficient binary storage and operations
 
 ## Installation
 
-### Manual Installation
+### Prerequisites
 
-#### Linux and Mac
+- PostgreSQL 12+ (tested on PostgreSQL 12-17)
+- C compiler (GCC, Clang, or MSVC)
+- PostgreSQL development headers
 
-Compile and install the extension (supports Postgres 13+)
+### Build and Install
 
-```sh
-cd /tmp
-git clone --branch v1.0.0 https://github.com/agniswarm/pg-ulid.git
-cd pg-ulid
+```bash
+# Clone the repository
+git clone <repository-url>
+cd ulid-go-extension
+
+# Build the extension
 make
-make install # may need sudo
-```
 
-See the [installation notes](#installation-notes---linux-and-mac) if you run into issues
+# Install the extension
+sudo make install
 
-#### Windows
-
-Ensure [C++ support in Visual Studio](https://learn.microsoft.com/en-us/cpp/build/building-on-the-command-line?view=msvc-170#download-and-install-the-tools) is installed and run `x64 Native Tools Command Prompt for VS [version]` as administrator. Then use `nmake` to build:
-
-```cmd
-set "PGROOT=C:\Program Files\PostgreSQL\17"
-cd %TEMP%
-git clone --branch v1.0.0 https://github.com/agniswarm/pg-ulid.git
-cd pg-ulid
-nmake /F Makefile.win
-nmake /F Makefile.win install
-```
-
-See the [installation notes](#installation-notes---windows) if you run into issues
-
-### Docker
-
-Build the Docker image manually:
-
-```sh
-git clone --branch v1.0.0 https://github.com/agniswarm/pg-ulid.git
-cd pg-ulid
-docker build -t pg-ulid .
-```
-
-Run with PostgreSQL:
-
-```sh
-docker run --name postgres-ulid -e POSTGRES_PASSWORD=password -d pg-ulid
-```
-
-## Getting Started
-
-Enable the extension (do this once in each database where you want to use it)
-
-```sql
+# Connect to PostgreSQL and create the extension
+psql -d your_database
 CREATE EXTENSION ulid;
 ```
 
-Generate a monotonic ULID (ensures ordering within same millisecond)
+### Docker
+
+```bash
+# Build Docker image
+docker build -t postgres-ulid .
+
+# Run PostgreSQL with ULID extension
+docker run -d --name postgres-ulid -e POSTGRES_PASSWORD=password -p 5432:5432 postgres-ulid
+```
+
+## Usage
+
+### Basic ULID Generation
 
 ```sql
+-- Generate a monotonic ULID (guaranteed sortable)
 SELECT ulid();
--- 01K4FQ7QN4ZSW0SG5XACGM2HB4
-```
 
-Generate multiple ULIDs
-
-```sql
-SELECT ulid(), ulid(), ulid();
--- 01K4FQ7QN4ZSW0SG5XACGM2HB4 | 01K4FQ7QN4ZSW0SG5XACGM2HB5 | 01K4FQ7QN4ZSW0SG5XACGM2HB6
-```
-
-### Random ULIDs
-
-Generate random ULIDs (non-monotonic):
-
-```sql
+-- Generate a random ULID
 SELECT ulid_random();
--- 01K4FQ7QN4ZSW0SG5XACGM2HB4
 
-SELECT ulid_crypto();
--- 01K4FQ7QN4ZSW0SG5XACGM2HB5
+-- Generate ULID with specific timestamp (in milliseconds)
+SELECT ulid_generate_with_timestamp(1640995200000); -- 2022-01-01 00:00:00 UTC
 ```
 
-### Time-based Generation
-
-Generate ULIDs with specific timestamps:
+### ULID Type Operations
 
 ```sql
--- Generate ULID for a specific timestamp (milliseconds since epoch)
-SELECT ulid_time(1640995200000);
--- 01FR9EZ7002NVJQ60SA8KWGD5J
-
--- Generate ULID for current time
-SELECT ulid_time(extract(epoch from now()) * 1000);
--- 01K4FQ7QN4ZSW0SG5XACGM2HB4
-```
-
-### Batch Operations
-
-Generate multiple ULIDs at once:
-
-```sql
--- Generate 5 monotonic ULIDs
-SELECT ulid_batch(5);
--- {01K4FQ7QN4ZSW0SG5XACGM2HB4,01K4FQ7QN4ZSW0SG5XACGM2HB5,01K4FQ7QN4ZSW0SG5XACGM2HB6,01K4FQ7QN4ZSW0SG5XACGM2HB7,01K4FQ7QN4ZSW0SG5XACGM2HB8}
-
--- Generate 3 random ULIDs
-SELECT ulid_random_batch(3);
--- {01K4FQ7QN4ZSW0SG5XACGM2HB4,01K4FQ7QN4ZSW0SG5XACGM2HB5,01K4FQ7QN4ZSW0SG5XACGM2HB6}
-
--- For high-throughput scenarios, use reasonable batch sizes
-SELECT ulid_batch(100) FROM generate_series(1, 10);  -- Generates 1000 ULIDs efficiently
-```
-
-## Storing
-
-Create a new table with ULID primary key
-
-```sql
-CREATE TABLE events (id TEXT PRIMARY KEY DEFAULT ulid(), data JSONB);
-```
-
-Or add a ULID column to an existing table
-
-```sql
-ALTER TABLE items ADD COLUMN id TEXT DEFAULT ulid();
-```
-
-Insert records with auto-generated ULIDs
-
-```sql
-INSERT INTO events (data) VALUES ('{"event": "user_login"}'), ('{"event": "user_logout"}');
-```
-
-Or specify ULIDs manually
-
-```sql
-INSERT INTO events (id, data) VALUES (ulid(), '{"event": "custom"}');
-```
-
-## Querying
-
-Get all events ordered by creation time (ULIDs are lexicographically sortable)
-
-```sql
-SELECT * FROM events ORDER BY id;
-```
-
-Get events created after a specific ULID
-
-```sql
-SELECT * FROM events WHERE id > '01K4FQ7QN4ZSW0SG5XACGM2HB4';
-```
-
-Get events created within a time range
-
-```sql
-SELECT * FROM events 
-WHERE id >= ulid_time(1640995200000)  -- 2022-01-01 00:00:00 UTC
-  AND id < ulid_time(1641081600000);  -- 2022-01-02 00:00:00 UTC
-```
-
-## Time-based Generation
-
-Generate ULIDs with specific timestamps
-
-```sql
--- Generate ULID for 2022-01-01 00:00:00 UTC
-SELECT ulid_time(1640995200000);
--- 01ARZ3NDEKTSV4RRFFQ69G5FAV
-
--- Generate ULID for current time
-SELECT ulid_time(extract(epoch from now()) * 1000);
-```
-
-Use for time-based partitioning
-
-```sql
-CREATE TABLE logs_2024 (
-    id TEXT PRIMARY KEY DEFAULT ulid_time(extract(epoch from now()) * 1000),
-    message TEXT
+-- Create table with ULID primary key
+CREATE TABLE users (
+    id ulid PRIMARY KEY DEFAULT ulid(),
+    name text NOT NULL,
+    created_at timestamp DEFAULT now()
 );
+
+-- Insert data
+INSERT INTO users (name) VALUES ('John Doe'), ('Jane Smith');
+
+-- Query with ULID
+SELECT * FROM users WHERE id = '01ARZ3NDEKTSV4RRFFQ69G5FAV'::ulid;
 ```
 
-## Batch Generation
-
-Generate multiple ULIDs efficiently
+### Casting Operations
 
 ```sql
--- Generate 5 monotonic ULIDs
-SELECT ulid_batch(5);
--- {01K4FQ7QN4ZSW0SG5XACGM2HB4,01K4FQ7QN4ZSW0SG5XACGM2HB5,...}
+-- Text casting
+SELECT '01ARZ3NDEKTSV4RRFFQ69G5FAV'::ulid::text;
 
--- Generate 3 random ULIDs
-SELECT ulid_random_batch(3);
--- {01K4FQ7QN4ZSW0SG5XACGM2HB7,01K4FQ7QN4ZSW0SG5XACGM2HB8,...}
+-- Timestamp casting
+SELECT '2023-09-15 12:00:00'::timestamp::ulid::timestamp;
+
+-- Timestamptz casting
+SELECT '2023-09-15 12:00:00+00'::timestamptz::ulid::timestamptz;
+
+-- UUID casting
+SELECT '550e8400-e29b-41d4-a716-446655440000'::uuid::ulid::uuid;
+
+-- Bytea casting
+SELECT '01ARZ3NDEKTSV4RRFFQ69G5FAV'::ulid::bytea;
 ```
 
-Use for bulk inserts
+### Timestamp Operations
 
 ```sql
-INSERT INTO events (id, data) 
-SELECT id, jsonb_build_object('event', 'batch_' || row_number() OVER ())
-FROM unnest(ulid_batch(50)) AS id;  -- Use reasonable batch size
+-- Extract timestamp from ULID
+SELECT ulid_timestamp('01ARZ3NDEKTSV4RRFFQ69G5FAV'::ulid);
+
+-- Convert ULID text to timestamp
+SELECT ulid_to_timestamp('01ARZ3NDEKTSV4RRFFQ69G5FAV');
+
+-- Generate ULID with specific timestamp
+SELECT ulid_time(1640995200000); -- timestamp in milliseconds
 ```
 
-## Parsing and Validation
-
-Parse ULIDs to extract timestamp and entropy
+### Batch Generation
 
 ```sql
-SELECT * FROM ulid_parse('01K4FQ7QN4ZSW0SG5XACGM2HB4');
--- ulid_str | timestamp | entropy | time_str
--- 01K4FQ7QN4ZSW0SG5XACGM2HB4 | 1640995200000 | 0x1234567890abcdef | 2022-01-01T00:00:00Z
+-- Generate multiple ULIDs
+SELECT ulid_batch(5);           -- Array of monotonic ULIDs
+SELECT ulid_random_batch(5);    -- Array of random ULIDs
 ```
 
-Validate ULID format
+### Comparison and Sorting
 
 ```sql
-SELECT ulid_parse('invalid-ulid');
--- ERROR: invalid ULID format
+-- ULIDs are naturally sortable by generation time
+SELECT id, name, created_at 
+FROM users 
+ORDER BY id;
+
+-- Comparison operations
+SELECT * FROM users 
+WHERE id > '01ARZ3NDEKTSV4RRFFQ69G5FAV'::ulid;
 ```
+
+## API Reference
+
+### Core Functions
+
+| Function | Return Type | Description |
+|----------|-------------|-------------|
+| `ulid_random()` | `ulid` | Generate a random ULID |
+| `ulid()` | `ulid` | Generate a monotonic ULID (guaranteed sortable) |
+| `ulid_generate_with_timestamp(bigint)` | `ulid` | Generate ULID with specific timestamp |
+| `ulid_timestamp(ulid)` | `bigint` | Extract timestamp from ULID |
+
+### Utility Functions
+
+| Function | Return Type | Description |
+|----------|-------------|-------------|
+| `ulid_time(bigint)` | `ulid` | Generate ULID with timestamp in milliseconds |
+| `ulid_parse(text)` | `ulid` | Parse ULID from text string |
+| `ulid_to_timestamp(text)` | `timestamp` | Convert ULID text to timestamp |
+| `ulid_timestamp_text(text)` | `bigint` | Extract timestamp from ULID text |
+
+### Batch Functions
+
+| Function | Return Type | Description |
+|----------|-------------|-------------|
+| `ulid_batch(integer)` | `ulid[]` | Generate array of monotonic ULIDs |
+| `ulid_random_batch(integer)` | `ulid[]` | Generate array of random ULIDs |
+
+### UUID Functions
+
+| Function | Return Type | Description |
+|----------|-------------|-------------|
+| `ulid_to_uuid(ulid)` | `uuid` | Convert ULID to UUID |
+| `ulid_from_uuid(uuid)` | `ulid` | Convert UUID to ULID |
+
+### Operators
+
+| Operator | Description |
+|----------|-------------|
+| `=` | Equal |
+| `<>` | Not equal |
+| `<` | Less than |
+| `<=` | Less than or equal |
+| `>` | Greater than |
+| `>=` | Greater than or equal |
+
+### Casting
+
+| From Type | To Type | Description |
+|-----------|---------|-------------|
+| `text` | `ulid` | Parse ULID from string |
+| `ulid` | `text` | Convert ULID to string |
+| `timestamp` | `ulid` | Convert timestamp to ULID |
+| `ulid` | `timestamp` | Extract timestamp from ULID |
+| `timestamptz` | `ulid` | Convert timestamptz to ULID |
+| `ulid` | `timestamptz` | Extract timestamptz from ULID |
+| `uuid` | `ulid` | Convert UUID to ULID |
+| `ulid` | `uuid` | Convert ULID to UUID |
+| `ulid` | `bytea` | Convert ULID to binary |
+| `bytea` | `ulid` | Convert binary to ULID |
 
 ## Performance
 
-### Loading
+- **Storage**: 16 bytes per ULID (same as UUID)
+- **Indexing**: Full B-tree and hash index support
+- **Sorting**: Natural lexicographic ordering by timestamp
+- **Generation**: ~1M ULIDs/second on modern hardware
 
-Use `COPY` for bulk loading data with ULIDs.
+## Testing
 
-```sql
--- Create table
-CREATE TABLE events (id TEXT PRIMARY KEY, data TEXT);
+Comprehensive Python tests are available using pytest. See [test/python/README.md](test/python/README.md) for detailed testing information.
 
--- Load data using COPY from file (recommended approach)
--- First create a CSV file:
--- 01K4FQ7QN4ZSW0SG5XACGM2HB4,test_event
--- 01K4FQ7QN4ZSW0SG5XACGM2HB5,login_event
--- 01K4FQ7QN4ZSW0SG5XACGM2HB6,logout_event
+```bash
+# Run all tests
+python -m pytest test/python/ -v
 
-COPY events (id, data) FROM '/path/to/events.csv' WITH (FORMAT CSV);
-
--- For JSON data, use INSERT instead
-INSERT INTO events (id, data) VALUES 
-  ('01K4FQ7QN4ZSW0SG5XACGM2HB4', '{"event":"test"}'),
-  ('01K4FQ7QN4ZSW0SG5XACGM2HB5', '{"event":"login"}');
+# Run specific test suites
+python -m pytest test/python/test_01_basic_functionality.py -v
+python -m pytest test/python/test_02_casting_operations.py -v
+python -m pytest test/python/test_03_monotonic_generation.py -v
 ```
 
-###  Querying
+## Development
 
-Use `EXPLAIN ANALYZE` to debug performance.
+### Building from Source
 
-```sql
-EXPLAIN ANALYZE SELECT * FROM events WHERE id > '01K4FQ7QN4ZSW0SG5XACGM2HB4' ORDER BY id LIMIT 10;
+```bash
+# Install dependencies
+# Ubuntu/Debian
+sudo apt-get install postgresql-server-dev-15 build-essential
+
+# macOS
+brew install postgresql
+
+# Windows
+# Install PostgreSQL with development tools
+
+# Build
+make clean
+make
+
+# Test (see test/python/README.md for detailed testing)
+python -m pytest test/python/ -v
 ```
 
-For high-throughput scenarios, consider using batch generation:
+### Project Structure
 
-```sql
--- More efficient than multiple individual calls (use reasonable batch sizes)
-SELECT ulid_batch(100) FROM generate_series(1, 10);
-
--- Generate 500 ULIDs efficiently
-SELECT count(*) as total_ulids 
-FROM (SELECT unnest(ulid_batch(100)) FROM generate_series(1, 5)) t;
+```
+├── src/
+│   └── ulid.c              # Main implementation
+├── sql/
+│   └── ulid--0.1.1.sql     # SQL definitions
+├── test/
+│   └── python/             # Python test suite
+├── Makefile                # Unix build
+├── Makefile.win            # Windows build
+└── ulid.control            # Extension metadata
 ```
 
-## Scaling
+## License
 
-Scale ulid the same way you scale Postgres.
-
-Scale vertically by increasing memory, CPU, and storage on a single instance. Use existing tools to [tune parameters](#tuning) and [monitor performance](#monitoring).
-
-Scale horizontally with [replicas](https://www.postgresql.org/docs/current/hot-standby.html), or use [Citus](https://github.com/citusdata/citus) or another approach for sharding.
-
-## Troubleshooting
-
-#### Why isn't a query using an index on ULID columns?
-
-ULID columns can use standard B-tree indexes for ordering and range queries. Make sure you have an index:
-
-```sql
-CREATE INDEX ON events (id);
-```
-
-#### Why are ULIDs not perfectly ordered?
-
-ULIDs are designed to be lexicographically sortable, but they're not perfectly ordered across different time periods. Within the same millisecond, monotonic ULIDs ensure ordering.
-
-#### Why is batch generation faster?
-
-Batch generation reduces the overhead of multiple function calls and can generate ULIDs more efficiently in bulk.
-
-## Reference
-
-### ULID Functions
-
-Function | Description | Parameters | Returns
---- | --- | --- | ---
-`ulid()` | Generate monotonic ULID | None | TEXT
-`ulid_random()` | Generate random ULID | None | TEXT
-`ulid_time(timestamp_ms)` | Generate ULID with timestamp | BIGINT | TEXT
-`ulid_parse(ulid_str)` | Parse and validate ULID | TEXT | TABLE
-`ulid_batch(count)` | Generate multiple monotonic ULIDs | INTEGER | TEXT[]
-`ulid_random_batch(count)` | Generate multiple random ULIDs | INTEGER | TEXT[]
-
-### ULID Properties
-
-- **Length**: 26 characters
-- **Format**: 10 characters timestamp + 16 characters entropy
-- **Character set**: Crockford's Base32 (0-9, A-Z excluding I, L, O, U)
-- **Sortable**: Lexicographically sortable by creation time
-- **Monotonic**: Within same millisecond, ensures ordering
-- **URL-safe**: No special characters
-
-## Thanks
-
-Thanks to:
-
-- [oklog/ulid](https://github.com/oklog/ulid) - The original ULID specification and Go implementation
-- [ULID Specification](https://github.com/ulid/spec) - The official ULID specification
-- [Crockford's Base32](https://www.crockford.com/base32.html) - The encoding used by ULIDs
-
-## History
-
-View the [changelog](https://github.com/agniswarm/pg-ulid/blob/master/CHANGELOG.md)
+MIT License - see LICENSE file for details.
 
 ## Contributing
 
-Everyone is encouraged to help improve this project. Here are a few ways you can help:
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Submit a pull request
 
-- [Report bugs](https://github.com/agniswarm/pg-ulid/issues)
-- Fix bugs and [submit pull requests](https://github.com/agniswarm/pg-ulid/pulls)
-- Write, clarify, or fix documentation
-- Suggest or add new features
+## Changelog
 
-To get started with development:
+See CHANGELOG.md for version history and changes.
 
-```sh
-git clone https://github.com/agniswarm/pg-ulid.git
-cd pg-ulid
-make
-make install
-```
+## Support
 
-For testing, see the [test documentation](test/README.md).
+- **Issues**: Report bugs and request features on GitHub
+- **Documentation**: See [test/python/README.md](test/python/README.md) for comprehensive testing and usage examples
+- **Performance**: ULIDs are designed for high-performance applications
+
+## Related Projects
+
+- [ULID Specification](https://github.com/ulid/spec)
+- [PostgreSQL](https://www.postgresql.org/)
+- [ULID JavaScript](https://github.com/ulid/javascript)

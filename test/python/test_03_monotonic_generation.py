@@ -9,9 +9,10 @@ This suite fails loudly if the DB or required ULID functions/types are missing.
 """
 
 import os
-from datetime import datetime, timezone
 import psycopg2
 import pytest
+from datetime import datetime, timezone
+from typing import Optional, Tuple
 
 DB_CONFIG = {
     "host": os.getenv("PGHOST", "localhost"),
@@ -22,23 +23,20 @@ DB_CONFIG = {
 }
 
 
-def exec_one(conn, sql: str, params=None):
-    """Return first column of the first row, or None if no rows."""
+def exec_one(conn, sql: str, params: Optional[Tuple] = None):
     with conn.cursor() as cur:
         cur.execute(sql, params or ())
         row = cur.fetchone()
         return None if row is None else row[0]
 
 
-def exec_fetchone(conn, sql: str, params=None):
-    """Return entire first row as tuple or None."""
+def exec_fetchone(conn, sql: str, params: Optional[Tuple] = None):
     with conn.cursor() as cur:
         cur.execute(sql, params or ())
         return cur.fetchone()
 
 
 def has_function(conn, func_name: str) -> bool:
-    """Return True if a function with name exists in pg_proc (across all schemas)."""
     q = "SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = %s)"
     with conn.cursor() as cur:
         cur.execute(q, (func_name,))
@@ -46,7 +44,6 @@ def has_function(conn, func_name: str) -> bool:
 
 
 def type_exists(conn, type_name: str) -> bool:
-    """Return True if a type exists in pg_type."""
     q = "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = %s)"
     with conn.cursor() as cur:
         cur.execute(q, (type_name,))
@@ -74,7 +71,6 @@ def test_required_ulid_functions_and_type_present(db):
     required_funcs = [
         "ulid",
         "ulid_random",
-        "ulid_crypto",
         "ulid_time",
         "ulid_parse",
         "ulid_batch",

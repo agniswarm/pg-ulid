@@ -103,12 +103,12 @@ CREATE OPERATOR CLASS ulid_hash_ops
     FUNCTION 1 ulid_hash(ulid);
 
 -- Define ULID generation functions
-CREATE OR REPLACE FUNCTION ulid_generate()
+CREATE OR REPLACE FUNCTION ulid_random()
 RETURNS ulid
 AS 'MODULE_PATHNAME', 'ulid_generate'
 LANGUAGE C VOLATILE;
 
-CREATE OR REPLACE FUNCTION ulid_generate_monotonic()
+CREATE OR REPLACE FUNCTION ulid()
 RETURNS ulid
 AS 'MODULE_PATHNAME', 'ulid_generate_monotonic'
 LANGUAGE C VOLATILE;
@@ -131,24 +131,7 @@ LANGUAGE C IMMUTABLE STRICT;
 
 -- Casting functions will be added later
 
--- Basic convenience functions
-CREATE OR REPLACE FUNCTION ulid()
-RETURNS ulid
-AS $$
-    SELECT ulid_generate_monotonic();
-$$ LANGUAGE sql VOLATILE;
-
-CREATE OR REPLACE FUNCTION ulid_random()
-RETURNS ulid
-AS $$
-    SELECT ulid_generate();
-$$ LANGUAGE sql VOLATILE;
-
-CREATE OR REPLACE FUNCTION ulid_crypto()
-RETURNS ulid
-AS $$
-    SELECT ulid_generate();
-$$ LANGUAGE sql VOLATILE;
+-- Basic convenience functions (removed duplicates - using C functions directly)
 
 -- Generate ULID with specific timestamp
 CREATE OR REPLACE FUNCTION ulid_time(timestamp_ms BIGINT)

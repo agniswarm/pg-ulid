@@ -2,8 +2,8 @@
   "name": "ulid",
   "abstract": "Universally Unique Lexicographically Sortable Identifier (ULID) for PostgreSQL - Go implementation",
   "description": "A comprehensive PostgreSQL extension that provides ULID generation using Go with advanced features from the oklog/ulid/v2 library. Supports monotonic ULIDs, time-based generation, batch operations, and more.",
-  "version": "1.0.0",
-  "maintainer": "ULID Extension Team",
+  "version": "0.1.1",
+  "maintainer": "github.com/agniswarm",
   "license": "MIT",
   "prereqs": {
     "runtime": {
@@ -14,8 +14,8 @@
   },
   "provides": {
     "ulid": {
-      "file": "sql/ulid--1.0.0.sql",
-      "version": "1.0.0",
+      "file": "sql/ulid--0.1.1.sql",
+      "version": "0.1.1",
       "abstract": "ULID generation functions for PostgreSQL"
     }
   },
@@ -32,7 +32,7 @@
   },
   "generated_by": "ULID Extension Team",
   "meta_spec": {
-    "version": "1.0.0",
+    "version": "0.1.1",
     "url": "https://pgxn.org/spec/"
   },
   "tags": [

@@ -3,6 +3,9 @@ ulid_generator
 *.so
 *.dylib
 *.dll
+*.o
+*.a
+*.exe
 
 # Go build cache
 go.sum.bak
@@ -15,6 +18,8 @@ go.sum.bak
 *.swp
 *.swo
 *~
+*.sublime-*
+.vim/
 
 # OS files
 .DS_Store
@@ -24,6 +29,7 @@ Thumbs.db
 *.tmp
 *.temp
 *.log
+build.log
 
 # PostgreSQL extension files (generated)
 *.control.bak
@@ -33,6 +39,8 @@ Thumbs.db
 test_results/
 coverage.out
 coverage.html
+test_output/
+*.test.log
 
 # Python
 __pycache__/
@@ -68,6 +76,9 @@ coverage.xml
 *.cover
 .hypothesis/
 
+# Pytest cache
+.pytest_cache/
+
 # Docker
 .dockerignore
 
@@ -79,3 +90,13 @@ coverage.xml
 # Backup files
 *.bak
 *.backup
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Development artifacts
+*.orig
+*.rej
+*.patch

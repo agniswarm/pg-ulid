@@ -40,6 +40,14 @@ def has_function(conn, func_name: str) -> bool:
         return cur.fetchone()[0]
 
 
+def type_exists(conn, type_name: str) -> bool:
+    """Return True if a PostgreSQL type exists."""
+    query = "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = %s)"
+    with conn.cursor() as cur:
+        cur.execute(query, (type_name,))
+        return cur.fetchone()[0]
+
+
 @pytest.fixture(scope="module")
 def db():
     """Module-scoped DB connection. Skip module if cannot connect."""
@@ -59,7 +67,7 @@ def db():
 @pytest.fixture(scope="module")
 def ulid_functions_available(db):
     """Detect availability of key ULID functions and return a dict of booleans."""
-    funcs = ["ulid", "ulid_random", "ulid_crypto", "ulid_time", "ulid_parse",
+    funcs = ["ulid", "ulid_random", "ulid_time", "ulid_parse",
              "ulid_batch", "ulid_random_batch"]
     availability = {f: has_function(db, f) for f in funcs}
     return availability
@@ -72,7 +80,6 @@ def exec_one(db, sql: str, params=None):
         # If no rows, return None for convenience
         return None if row is None else row[0]
 
-
 def test_basic_generation_and_lengths(db, ulid_functions_available):
     # Skip if basic ulid function missing
     if not ulid_functions_available.get("ulid"):
@@ -84,7 +91,7 @@ def test_basic_generation_and_lengths(db, ulid_functions_available):
     assert len(val) == 26, f"Expected length 26 for ulid(), got {len(val)}"
 
 
-@pytest.mark.parametrize("fn", ["ulid_random", "ulid_crypto"])
+@pytest.mark.parametrize("fn", ["ulid_random"])
 def test_other_generators_nonnull_and_length(db, ulid_functions_available, fn):
     if not ulid_functions_available.get(fn):
         pytest.skip(f"{fn}() not available in database")
@@ -139,7 +146,7 @@ def test_readme_basic_generation(db, ulid_functions_available):
     # Basic generation
     assert exec_one(db, "SELECT ulid()") is not None
     assert exec_one(db, "SELECT ulid_random()") is not None
-    assert exec_one(db, "SELECT ulid_crypto()") is not None
+    assert exec_one(db, "SELECT ulid_random()") is not None
 
 
 def test_readme_time_based_generation(db, ulid_functions_available):
@@ -243,16 +250,12 @@ def test_generators_produce_different_values(db, ulid_functions_available):
     # We require ulid and at least one other generator for a meaningful test
     if not ulid_functions_available.get("ulid"):
         pytest.skip("ulid() not available in database")
-    if not (ulid_functions_available.get("ulid_random") or ulid_functions_available.get("ulid_crypto")):
-        pytest.skip("No alternate ULID generator available to compare against ulid()")
+    if not ulid_functions_available.get("ulid_random"):
+        pytest.skip("ulid_random() not available in database")
 
-    # Compare to ulid_random if available else ulid_crypto
-    if ulid_functions_available.get("ulid_random"):
-        different = exec_one(db, "SELECT (ulid()::text <> ulid_random()::text)::boolean")
-        assert different is True
-    elif ulid_functions_available.get("ulid_crypto"):
-        different = exec_one(db, "SELECT (ulid()::text <> ulid_crypto()::text)::boolean")
-        assert different is True
+    # Compare to ulid_random
+    different = exec_one(db, "SELECT (ulid()::text <> ulid_random()::text)::boolean")
+    assert different is True
 
 
 def test_length_bounds(db, ulid_functions_available):
@@ -279,4 +282,30 @@ def test_text_equality_and_consecutive_difference(db):
     assert diff is True
 
 
-# Note: test_null_handling moved to test_08_error_handling.py for comprehensive ULID null handling
+
+def test_required_ulid_functions_and_types_present(db):
+    """Fail early if required ULID functions or the ulid type are missing."""
+    required_funcs = [
+        "ulid",
+        "ulid_random",
+        "ulid_time",
+        "ulid_parse",
+        "ulid_batch",
+        "ulid_random_batch",
+        "ulid_timestamp",
+        "ulid_generate_with_timestamp",
+    ]
+    missing = [f for f in required_funcs if not has_function(db, f)]
+
+    if not type_exists(db, "ulid"):
+        missing.append("type:ulid")
+
+    if missing:
+        hint = (
+            "Install/enable the ULID extension or add missing functions/types in the test DB. "
+            "Example (superuser): CREATE EXTENSION ulid;"
+        )
+        pytest.fail(
+            f"Missing required ULID functions/types: {', '.join(missing)}. {hint}",
+            pytrace=False,
+        )

@@ -35,8 +35,6 @@
 
 PG_MODULE_MAGIC;
 
-/* forward declarations removed - using PG_FUNCTION_INFO_V1 instead */
-
 typedef struct ULID
 {
     unsigned char data[16];

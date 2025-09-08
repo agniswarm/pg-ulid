@@ -86,7 +86,6 @@ def db():
     required_funcs = [
         "ulid",
         "ulid_random",
-        "ulid_crypto",
         "ulid_time",
         "ulid_generate_with_timestamp",
         "ulid_parse",
@@ -113,10 +112,9 @@ def db():
 
 
 def test_basic_generators(db):
-    """ulid(), ulid_random(), ulid_crypto() should return non-null values."""
+    """ulid(), ulid_random() should return non-null values."""
     assert exec_one(db, "SELECT ulid()") is not None
     assert exec_one(db, "SELECT ulid_random()") is not None
-    assert exec_one(db, "SELECT ulid_crypto()") is not None
 
 
 def test_time_based_generation(db):

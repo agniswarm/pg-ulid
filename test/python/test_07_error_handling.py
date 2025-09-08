@@ -61,7 +61,7 @@ def db():
         pytest.fail(f"Cannot connect to database: {exc}", pytrace=False)
 
     required_funcs = [
-        "ulid", "ulid_random", "ulid_crypto", "ulid_time", "ulid_parse",
+        "ulid", "ulid_random", "ulid_time", "ulid_parse",
         "ulid_timestamp", "ulid_batch", "ulid_random_batch"
     ]
     missing = [f for f in required_funcs if not has_function(conn, f)]

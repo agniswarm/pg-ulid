@@ -61,36 +61,6 @@ def db():
         except Exception:
             pass
 
-
-def test_required_ulid_functions_and_types_present(db):
-    """Fail early if required ULID functions or the ulid type are missing."""
-    required_funcs = [
-        "ulid",
-        "ulid_random",
-        "ulid_crypto",
-        "ulid_time",
-        "ulid_parse",
-        "ulid_batch",
-        "ulid_random_batch",
-        "ulid_timestamp",
-        "ulid_generate_with_timestamp",
-    ]
-    missing = [f for f in required_funcs if not has_function(db, f)]
-
-    if not type_exists(db, "ulid"):
-        missing.append("type:ulid")
-
-    if missing:
-        hint = (
-            "Install/enable the ULID extension or add missing functions/types in the test DB. "
-            "Example (superuser): CREATE EXTENSION ulid;"
-        )
-        pytest.fail(
-            f"Missing required ULID functions/types: {', '.join(missing)}. {hint}",
-            pytrace=False,
-        )
-
-
 def test_text_to_ulid_and_back_casting(db):
     """Text to ULID and ULID to text casting should work and preserve value."""
     # Text -> ulid cast
