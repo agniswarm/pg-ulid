@@ -161,6 +161,12 @@ jobs:
             Write-Host "Chocolatey temp dir not present"
           }
 
+      - name: Install jom (parallel nmake)
+        run: |
+          echo "Installing jom for better parallel builds..."
+          choco install jom -y
+          echo "jom installed successfully"
+
       - name: Verify PostgreSQL installation
         run: |
           echo "Verifying PostgreSQL installation..."
