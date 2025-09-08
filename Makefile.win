@@ -1,9 +1,10 @@
 EXTENSION=ulid
 EXTVERSION=0.1.1
 
-MODULE_big=$(EXTENSION)
+MODULE_BIG=ulid
 OBJS=src/ulid.obj
-DATA=$(EXTENSION).control sql/$(EXTENSION)--$(EXTVERSION).sql
+DATA=ulid.control
+DATA=sql/ulid--0.1.1.sql $(DATA)
 
 # Simple nmake build without PGXS dependency
 CC=cl
