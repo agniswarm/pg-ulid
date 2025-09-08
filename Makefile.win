@@ -1,67 +1,67 @@
 #
-# Makefile.win - minimal nmake build for PostgreSQL ULID extension
-#
-# Requirements:
-#   - Environment variable PGXS must be set to full path of pgxs.mk BEFORE running nmake.
-#     Example PGXS: C:\Program Files\PostgreSQL\15\lib\postgresql\pgxs\src\makefiles\pgxs.mk
-#   - Use a Windows shell to run nmake (pwsh or cmd)
+# Makefile - Unix (Linux / macOS) build for PostgreSQL ULID extension
 #
 
 EXTENSION = ulid
 EXTVERSION = 0.1.1
 
 MODULE_big = $(EXTENSION)
-OBJS = src\ulid.obj
-DATA = $(EXTENSION).control sql\$(EXTENSION)--$(EXTVERSION).sql
+OBJS = src/ulid.o
+DATA = $(EXTENSION).control sql/$(EXTENSION)--$(EXTVERSION).sql
 REGRESS =
 
-# nmake cannot execute shell during parse-time. PGXS must be supplied externally.
-PG_CONFIG = pg_config
+# Use pg_config to discover PGXS; fallback to pg_config in PATH
+PG_CONFIG ?= pg_config
+# Explicitly get the path to PGXS using pg_config, and fail with a clear error if not found.
+PG_CONFIG_PATH := $(shell which $(PG_CONFIG) 2>/dev/null)
+ifeq ($(PG_CONFIG_PATH),)
+$(error "pg_config not found in PATH. Please install PostgreSQL development packages or set PG_CONFIG. PATH: $(PATH)")
+endif
 
-!IF "$(PGXS)" == ""
-!ERROR "PGXS not set. Please set environment variable PGXS to the full path of pgxs.mk."
-!ENDIF
+PGXS := $(shell $(PG_CONFIG) --pgxs 2>/dev/null)
+ifeq ($(PGXS),)
+$(error "PGXS not available from pg_config ($(PG_CONFIG)). Please ensure PostgreSQL development files are installed. PG_CONFIG: $(PG_CONFIG_PATH)")
+endif
 
-!INCLUDE $(PGXS)
+include $(PGXS)
 
-# Optional ULID_C_DIR (set externally if needed)
-ULID_C_DIR =
-!IF "$(ULID_C_DIR)" != ""
-ULID_C_INCDIR = -I"$(ULID_C_DIR)\include"
-ULID_C_LIBDIR = -L"$(ULID_C_DIR)\lib"
-ULID_C_LIBS   = -lulid
-!ELSE
-ULID_C_INCDIR =
-ULID_C_LIBDIR =
-ULID_C_LIBS =
-!ENDIF
+# Optional: point to ulid-c include/lib if you want to use it
+ULID_C_DIR ?=
+ifdef ULID_C_DIR
+  ULID_C_INCDIR = -I$(ULID_C_DIR)/include
+  ULID_C_LIBDIR = -L$(ULID_C_DIR)/lib
+  ULID_C_LIBS   = -lulid
+else
+  ULID_C_INCDIR =
+  ULID_C_LIBDIR =
+  ULID_C_LIBS =
+endif
 
-# Compiler flags - MSVC defaults; change if you want to use gcc/mingw
-PG_CFLAGS = /O2
+TARGET_ARCH ?= $(shell uname -m)
+ARCH_FLAGS :=
+ifeq ($(TARGET_ARCH), i386)
+  ARCH_FLAGS += -m32
+endif
 
-!IFNDEF CC
-CC = cl
-!ENDIF
+OPTFLAGS ?= -O2
 
-# Compile src\ulid.c -> src\ulid.obj using MSVC cl
-src\ulid.obj: src\ulid.c
-	@echo Compiling src\ulid.c
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) $(ULID_C_INCDIR) /c src\ulid.c /Fo:src\ulid.obj
+PG_CFLAGS += $(OPTFLAGS) $(ARCH_FLAGS) -std=gnu11 -fno-lto -fno-fat-lto-objects \
+             -Wno-unused-variable -Wno-unused-function
 
-# 'all' target - ensure object exists; leave linking to PGXS include
-all: $(OBJS)
-	@echo Objects built.
+CC ?= $(HOSTCC)
 
-# installcheck: run the Windows batch test script
+src/%.o: src/%.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) $(ULID_C_INCDIR) -c $< -o $@
+
+# Custom installcheck: run our own CI script
 installcheck: all
-	@echo Running Windows CI batch test script...
-	cmd.exe /C "cd /d %CD% && test\build\ci.bat"
+	@echo "Running extension tests via test/build/ci.sh..."
+	@echo "Data files: $(DATA)"
+	@if [ -f "test/build/ci.sh" ]; then \
+		bash test/build/ci.sh; \
+	else \
+		echo "ERROR: test/build/ci.sh not found"; \
+		exit 1; \
+	fi
 
-clean:
-	-@echo Cleaning artifacts...
-	-@if exist src\ulid.obj del /q src\ulid.obj 2>nul
-	-@if exist $(EXTENSION).dll del /q $(EXTENSION).dll 2>nul
-	-@if exist results rmdir /s /q results 2>nul
-	-@if exist tmp_check rmdir /s /q tmp_check 2>nul
-	-@if exist regression.diffs del /q regression.diffs 2>nul
-	-@if exist regression.out del /q regression.out 2>nul
+.PHONY: all all-local install installcheck uninstall clean
