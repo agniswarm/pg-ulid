@@ -105,35 +105,8 @@ jobs:
           version: ${{ matrix.pg }}
           install-contrib: 'true'
           operating-system: ${{ matrix.os }}
-      - name: Setup MSVC Developer Command Prompt
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: "Debug: show pg_config and pgxs and Postgres dir"
-        shell: pwsh
-        run: |
-          Write-Host "=== Debug: pg_config / pgxs / installed files ==="
-          where pg_config || Write-Host "pg_config not found on PATH"
-          try { & pg_config --version } catch { Write-Host "pg_config --version failed" }
-          try { & pg_config --pgxs } catch { Write-Host "pg_config --pgxs failed or pg_config missing" }
-          Write-Host "Listing Program Files\PostgreSQL top-level (if present):"
-          if (Test-Path "C:\Program Files\PostgreSQL") {
-            Get-ChildItem "C:\Program Files\PostgreSQL" -ErrorAction SilentlyContinue | Select-Object -First 20
-          } else {
-            Write-Host "No C:\Program Files\PostgreSQL directory found"
-          }
-          Write-Host "Listing Chocolatey temp dir (if exists):"
-          if (Test-Path "C:\Users\runneradmin\AppData\Local\Temp\chocolatey") {
-            Get-ChildItem "C:\Users\runneradmin\AppData\Local\Temp\chocolatey" -Recurse -Depth 2 | Select-Object -First 30
-          } else {
-            Write-Host "Chocolatey temp dir not present"
-          }
-
-      - name: Install jom (parallel nmake)
-        run: |
-          echo "Installing jom for better parallel builds..."
-          choco install jom -y
-          echo "jom installed successfully"
-
+      # - name: Setup MSVC Developer Command Prompt
+      #   uses: ilammy/msvc-dev-cmd@v1
       - name: Verify PostgreSQL installation
         run: |
           echo "Verifying PostgreSQL installation..."
