@@ -1,16 +1,9 @@
-#
-# Makefile.win - Windows build for PostgreSQL ULID extension
-#
-# Designed to work with nmake (Microsoft Make) on Windows
-# Uses PGXS for building - requires PGXS environment variable to be set
-#
+EXTENSION=ulid
+EXTVERSION=0.1.1
 
-EXTENSION = ulid
-EXTVERSION = 0.1.1
-
-MODULE_big = $(EXTENSION)
-OBJS = src\ulid.obj
-DATA = $(EXTENSION).control sql\$(EXTENSION)--$(EXTVERSION).sql
+MODULE_big=$(EXTENSION)
+OBJS=src\ulid.obj
+DATA=$(EXTENSION).control sql\$(EXTENSION)--$(EXTVERSION).sql
 
 # nmake cannot execute shell during parse-time. PGXS must be supplied externally.
 
@@ -22,9 +15,9 @@ DATA = $(EXTENSION).control sql\$(EXTENSION)--$(EXTVERSION).sql
 
 # Optional ULID_C_DIR (set externally if needed)
 !IF "$(ULID_C_DIR)" != ""
-ULID_C_INCDIR = -I"$(ULID_C_DIR)\include"
-ULID_C_LIBDIR = -L"$(ULID_C_DIR)\lib"
-ULID_C_LIBS   = -lulid
+ULID_C_INCDIR=-I"$(ULID_C_DIR)\include"
+ULID_C_LIBDIR=-L"$(ULID_C_DIR)\lib"
+ULID_C_LIBS  =-lulid
 !ELSE
 ULID_C_INCDIR=
 ULID_C_LIBDIR=
@@ -32,10 +25,10 @@ ULID_C_LIBS=
 !ENDIF
 
 # Compiler flags - MSVC defaults; change if you want to use gcc/mingw
-PG_CFLAGS = /O2
+PG_CFLAGS=/O2
 
 !IFNDEF CC
-CC = cl
+CC=cl
 !ENDIF
 
 # Compile src\ulid.c -> src\ulid.obj using MSVC cl
