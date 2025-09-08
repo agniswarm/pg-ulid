@@ -290,7 +290,7 @@ def test_comprehensive_casts_report(db):
         r = cur.fetchone()
     assert r is not None and all(r), f"Not all comprehensive casting operations succeeded: {r}"
 
-def test_direct_timestamp_to_ulid_casting():
+def test_direct_timestamp_to_ulid_casting(db):
     """Test direct timestamp to ULID casting (should be faster than chained)."""
     test_timestamp = '2025-07-24'
     

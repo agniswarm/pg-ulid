@@ -25,25 +25,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Cache PostgreSQL installation
-        id: cache-postgres
-        uses: actions/cache@v4
-        with:
-          path: |
-            /usr/lib/postgresql/${{ matrix.pg }}
-            /usr/share/postgresql/${{ matrix.pg }}
-            /usr/bin/pg_config
-            /usr/bin/psql
-            /usr/bin/postgres
-            /var/lib/postgresql
-            /etc/postgresql
-          key: postgresql-${{ matrix.pg }}-${{ matrix.os }}
-          restore-keys: |
-            postgresql-${{ matrix.pg }}-${{ matrix.os }}
-            postgresql-${{ matrix.pg }}-
-      
       - name: Setup PostgreSQL
-        if: steps.cache-postgres.outputs.cache-hit != 'true'
         uses: agniswarm/pg-ext-actions/pg-setup@master
         with:
           version: ${{ matrix.pg }}
@@ -79,28 +61,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Cache PostgreSQL installation
-        id: cache-postgres
-        uses: actions/cache@v4
-        with:
-          path: |
-            /opt/homebrew/opt/postgresql@${{ matrix.pg }}
-            /opt/homebrew/bin/pg_config
-            /opt/homebrew/bin/psql
-            /opt/homebrew/bin/postgres
-            /usr/local/opt/postgresql@${{ matrix.pg }}
-            /usr/local/bin/pg_config
-            /usr/local/bin/psql
-            /usr/local/bin/postgres
-            /opt/homebrew/var/postgresql@${{ matrix.pg }}
-            /usr/local/var/postgresql@${{ matrix.pg }}
-          key: postgresql-${{ matrix.pg }}-${{ matrix.os }}
-          restore-keys: |
-            postgresql-${{ matrix.pg }}-${{ matrix.os }}
-            postgresql-${{ matrix.pg }}-
-      
       - name: Setup PostgreSQL
-        if: steps.cache-postgres.outputs.cache-hit != 'true'
         uses: agniswarm/pg-ext-actions/pg-setup@master
         with:
           version: ${{ matrix.pg }}
@@ -112,15 +73,6 @@ jobs:
           echo "Verifying PostgreSQL installation..."
           pg_config --version || echo "pg_config not found"
           echo "PostgreSQL installation verified"
-      
-      - name: Debug OS Detection
-        run: |
-          echo "Detected OS: $(case "macos-15" in ubuntu-*|debian-*|centos-*|rhel-*|fedora-*|suse-*|alpine-*) echo "linux" ;; macos-*|darwin-*) echo "macos" ;; windows-*|win-*) echo "windows" ;; linux|macos|windows) echo "macos-15" ;; *) echo "unknown" ;; esac)"
-          echo "Checking pg_config paths..."
-          ls -la /opt/homebrew/bin/pg_config 2>/dev/null || echo "/opt/homebrew/bin/pg_config not found"
-          ls -la /usr/local/bin/pg_config 2>/dev/null || echo "/usr/local/bin/pg_config not found"
-        shell: bash
-      
       - name: Build and test extension
         uses: agniswarm/pg-ext-actions/build-check@master
         with:
