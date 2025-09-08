@@ -1,22 +1,3 @@
-# Makefile.win - nmake-compatible build for PostgreSQL ULID extension
-#
-# Usage:
-#   - Preferred: export PGXS to the full path of pgxs.mk (e.g. via pg_config --pgxs)
-#     then run: nmake /NOLOGO /F Makefile.win installcheck
-#
-#   - Fallback: if PGXS is not provided, export the following env vars (pg_setup.sh should do this):
-#       PG_CONFIG       (full path to pg_config.exe or 'pg_config' on PATH)
-#       PG_INCLUDEDIR   (Postgres include directory)
-#       PG_LIBDIR       (Postgres lib directory)
-#       PG_PKGLIBDIR    (Postgres pkglibdir - where extensions live)
-#       PG_BINDIR       (Postgres bin dir)
-#     Then run nmake. The Makefile will compile and link using cl/link by default.
-#
-#   - To use gcc/mingw instead of cl/link, set CC=gcc in the environment and adjust LINK_CMD accordingly.
-#
-# Note:
-#   - This file uses only nmake-compatible syntax. Do not include $(shell ...) or GNU make conditionals here.
-
 EXTENSION = ulid
 EXTVERSION = 0.1.1
 
