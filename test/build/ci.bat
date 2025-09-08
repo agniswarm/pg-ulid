@@ -10,10 +10,24 @@ REM Check if PostgreSQL is running
 echo Checking PostgreSQL connection...
 pg_isready -q >nul 2>&1
 if %errorlevel% neq 0 (
-    echo ERROR: PostgreSQL is not running. This test requires a running PostgreSQL instance.
-    echo In CI, PostgreSQL should be started by the CI environment.
-    echo Locally, start PostgreSQL with: net start postgresql
-    exit /b 1
+    echo PostgreSQL is not running. Attempting to start it...
+    net start postgresql-x64-14 >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo Failed to start PostgreSQL service. Trying alternative service names...
+        net start postgresql >nul 2>&1
+        if %errorlevel% neq 0 (
+            echo ERROR: Cannot start PostgreSQL. This test requires a running PostgreSQL instance.
+            echo Please ensure PostgreSQL is installed and the service is running.
+            exit /b 1
+        )
+    )
+    echo Waiting for PostgreSQL to start...
+    timeout /t 5 >nul
+    pg_isready -q >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo ERROR: PostgreSQL is still not responding after startup attempt.
+        exit /b 1
+    )
 )
 
 REM Use the default postgres database
@@ -21,12 +35,42 @@ set PGDATABASE=postgres
 
 REM Test basic extension functionality
 echo Creating extension...
-psql -c "CREATE EXTENSION IF NOT EXISTS ulid;" >nul 2>&1
+echo Checking if extension files exist...
+if exist "C:\Program Files\PostgreSQL\14\share\extension\ulid.control" (
+    echo Found ulid.control
+) else (
+    echo ERROR: ulid.control not found
+    exit /b 1
+)
+if exist "C:\Program Files\PostgreSQL\14\share\extension\ulid--0.1.1.sql" (
+    echo Found ulid--0.1.1.sql
+) else (
+    echo ERROR: ulid--0.1.1.sql not found
+    exit /b 1
+)
+if exist "C:\Program Files\PostgreSQL\14\lib\ulid.dll" (
+    echo Found ulid.dll
+) else (
+    echo ERROR: ulid.dll not found
+    exit /b 1
+)
+
+echo Testing PostgreSQL connection with detailed error...
+psql -c "SELECT version();" 2>&1
+if %errorlevel% neq 0 (
+    echo ERROR: Cannot connect to PostgreSQL. Make sure it's running.
+    echo Try: net start postgresql-x64-14
+    exit /b 1
+)
+
+echo Creating extension...
+psql -c "CREATE EXTENSION IF NOT EXISTS ulid;" 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: Failed to create extension. Make sure it's properly installed.
     echo Check that the extension files are in the correct location:
-    echo   - C:\Program Files\PostgreSQL\*\share\extension\ulid.control
-    echo   - C:\Program Files\PostgreSQL\*\share\extension\ulid--0.1.1.sql
+    echo   - C:\Program Files\PostgreSQL\14\share\extension\ulid.control
+    echo   - C:\Program Files\PostgreSQL\14\share\extension\ulid--0.1.1.sql
+    echo   - C:\Program Files\PostgreSQL\14\lib\ulid.dll
     exit /b 1
 )
 
