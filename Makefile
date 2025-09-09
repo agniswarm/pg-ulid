@@ -71,7 +71,7 @@ endif
 ifeq ($(MONGOC_AVAILABLE),yes)
   OBJS += src/objectid.o
   SHLIB_LINK += $(MONGOC_LIBS)
-  PG_CPPFLAGS += $(MONGOC_CFLAGS)
+  PG_CPPFLAGS += $(MONGOC_CFLAGS) -std=c99
   SQL_MODULES += $(SQL_DIR)/objectid.sql
 endif
 
