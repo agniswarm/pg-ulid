@@ -2,90 +2,83 @@ name: Build and Test ULID Extension
 on: [push, pull_request]
 
 jobs:
-  linux:
-    name: Linux Builds
+  ubuntu:
+    runs-on: ${{ matrix.os }}
+    if: ${{ !startsWith(github.ref_name, 'mac') && !startsWith(github.ref_name, 'windows') }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - pg: 17
+          - postgres: 19
             os: ubuntu-24.04
-          - pg: 16
+          - postgres: 18
+            os: ubuntu-24.04
+          - postgres: 17
+            os: ubuntu-24.04
+          - postgres: 16
             os: ubuntu-24.04-arm
-          - pg: 15
+          - postgres: 15
             os: ubuntu-22.04
-          - pg: 14
+          - postgres: 14
             os: ubuntu-22.04-arm
-          - pg: 13
+          - postgres: 13
             os: ubuntu-22.04
-
-    runs-on: ${{ matrix.os }}
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup PostgreSQL
-        uses: agniswarm/pg-ext-actions/pg-setup@master
+      - uses: actions/checkout@v4
+      - uses: ankane/setup-postgres@v1
         with:
-          version: ${{ matrix.pg }}
-          install-contrib: 'true'
-          operating-system: ${{ matrix.os }}
-
-      - name: Verify PostgreSQL installation
-        run: |
-          echo "Verifying PostgreSQL installation..."
-          pg_config --version || echo "pg_config not found"
-          echo "PostgreSQL installation verified"
-
+          postgres-version: ${{ matrix.postgres }}
+          dev-files: true
       - name: Install MongoDB C driver libraries
         run: |
           echo "Installing MongoDB C driver libraries..."
           sudo apt-get update
           sudo apt-get install -y libmongoc-dev libbson-dev
           echo "MongoDB C driver libraries installed"
+      - run: make
+        env:
+          PG_CFLAGS: ${{ matrix.postgres >= 18 && '-Wno-missing-field-initializers' || '' }} -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare
+      - run: |
+          export PG_CONFIG=`which pg_config`
+          sudo --preserve-env=PG_CONFIG make install
+      - run: make installcheck
+      - if: ${{ failure() }}
+        run: cat regression.diffs
+      - run: |
+          sudo apt-get update
+          sudo apt-get install libipc-run-perl
+      - run: make prove_installcheck
+        if: ${{ false }}  # Disable for now until we have proper TAP tests
 
-      - name: Build and test extension
-        uses: agniswarm/pg-ext-actions/build-check@master
-        with:
-          working-directory: ./
-          operating-system: ${{ matrix.os }}
-
-  macos:
-    name: macOS Builds
+  mac:
+    runs-on: ${{ matrix.os }}
+    if: ${{ !startsWith(github.ref_name, 'windows') }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - pg: 17
+          - postgres: 17
             os: macos-15
-          - pg: 14
+          - postgres: 14
             os: macos-13
-
-    runs-on: ${{ matrix.os }}
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup PostgreSQL
-        uses: agniswarm/pg-ext-actions/pg-setup@master
+      - uses: actions/checkout@v4
+      - uses: ankane/setup-postgres@v1
         with:
-          version: ${{ matrix.pg }}
-          install-contrib: 'true'
-          operating-system: ${{ matrix.os }}
-
-      - name: Verify PostgreSQL installation
+          postgres-version: ${{ matrix.postgres }}
+      - name: Install MongoDB C driver libraries
         run: |
-          echo "Verifying PostgreSQL installation..."
-          pg_config --version || echo "pg_config not found"
-          echo "PostgreSQL installation verified"
+          echo "Installing MongoDB C driver libraries..."
+          brew install mongo-c-driver
+          echo "MongoDB C driver libraries installed"
+      - run: make
+        env:
+          PG_CFLAGS: -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-warning-option
+      - run: make install
+      - run: make installcheck
+      - if: ${{ failure() }}
+        run: cat regression.diffs
 
-      - name: Build and test extension
-        uses: agniswarm/pg-ext-actions/build-check@master
-        with:
-          working-directory: ./
-          operating-system: ${{ matrix.os }}
   windows:
     runs-on: ${{ matrix.os }}
     if: ${{ !startsWith(github.ref_name, 'mac') }}
@@ -102,6 +95,12 @@ jobs:
       - uses: ankane/setup-postgres@v1
         with:
           postgres-version: ${{ matrix.postgres }}
+      - name: Install MongoDB C driver libraries
+        run: |
+          echo "Installing MongoDB C driver libraries..."
+          # Note: MongoDB C driver installation on Windows would need to be handled differently
+          # This is a placeholder for now
+          echo "MongoDB C driver libraries installation placeholder"
       - run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" && ^
           nmake /NOLOGO /F Makefile.win && ^
@@ -110,3 +109,47 @@ jobs:
           nmake /NOLOGO /F Makefile.win clean && ^
           nmake /NOLOGO /F Makefile.win uninstall
         shell: cmd
+      - if: ${{ failure() }}
+        run: cat regression.diffs
+
+  i386:
+    if: ${{ !startsWith(github.ref_name, 'mac') && !startsWith(github.ref_name, 'windows') }}
+    runs-on: ubuntu-latest
+    container:
+      image: debian:12
+      options: --platform linux/386
+    steps:
+      - run: apt-get update && apt-get install -y build-essential git libipc-run-perl postgresql-15 postgresql-server-dev-15 sudo libmongoc-dev libbson-dev
+      - run: service postgresql start
+      - run: |
+          git clone https://github.com/${{ github.repository }}.git ulid-extension
+          cd ulid-extension
+          git fetch origin ${{ github.ref }}
+          git reset --hard FETCH_HEAD
+          make
+          make install
+          chown -R postgres .
+          sudo -u postgres make installcheck
+        env:
+          PG_CFLAGS: -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare
+      - if: ${{ failure() }}
+        run: cat ulid-extension/regression.diffs
+
+  valgrind:
+    if: ${{ !startsWith(github.ref_name, 'mac') && !startsWith(github.ref_name, 'windows') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ankane/setup-postgres-valgrind@v1
+        with:
+          postgres-version: 17
+          check-ub: yes
+      - name: Install MongoDB C driver libraries
+        run: |
+          echo "Installing MongoDB C driver libraries..."
+          sudo apt-get update
+          sudo apt-get install -y libmongoc-dev libbson-dev
+          echo "MongoDB C driver libraries installed"
+      - run: make OPTFLAGS=""
+      - run: sudo --preserve-env=PG_CONFIG make install
+      - run: make installcheck
