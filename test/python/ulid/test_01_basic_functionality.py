@@ -3,82 +3,20 @@
 Pytest-style tests for ULID PostgreSQL extension.
 
 Usage:
-  export PGHOST=localhost
-  export PGDATABASE=testdb
-  export PGUSER=postgres
-  export PGPASSWORD=""
-  pytest -q test_ulid_pytest.py
+    export PGHOST=localhost
+    export PGDATABASE=testdb
+    export PGUSER=postgres
+    export PGPASSWORD=""
+    pytest -q test_ulid_pytest.py
 
 The suite will skip tests that rely on missing functions (ulid, ulid_random, etc.).
 """
 
-import os
 from datetime import datetime
-import psycopg2
 import pytest
-
-DB_CONFIG = {
-    "host": os.getenv("PGHOST", "localhost"),
-    "database": os.getenv("PGDATABASE", "testdb"),
-    "user": os.getenv("PGUSER", "postgres"),
-    "password": os.getenv("PGPASSWORD", ""),
-    "port": int(os.getenv("PGPORT", 5432)),
-}
+from conftest import exec_one, has_function, type_exists
 
 
-def has_function(conn, func_name: str) -> bool:
-    """Return True if a SQL-callable function name exists in current search_path."""
-    query = """
-    SELECT EXISTS (
-      SELECT 1 FROM pg_proc p
-      JOIN pg_namespace n ON p.pronamespace = n.oid
-      WHERE p.proname = %s
-    )
-    """
-    with conn.cursor() as cur:
-        cur.execute(query, (func_name,))
-        return cur.fetchone()[0]
-
-
-def type_exists(conn, type_name: str) -> bool:
-    """Return True if a PostgreSQL type exists."""
-    query = "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = %s)"
-    with conn.cursor() as cur:
-        cur.execute(query, (type_name,))
-        return cur.fetchone()[0]
-
-
-@pytest.fixture(scope="module")
-def db():
-    """Module-scoped DB connection. Skip module if cannot connect."""
-    try:
-        conn = psycopg2.connect(**DB_CONFIG)
-    except Exception as exc:
-        pytest.skip(f"Cannot connect to database: {exc}")
-    try:
-        yield conn
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-
-@pytest.fixture(scope="module")
-def ulid_functions_available(db):
-    """Detect availability of key ULID functions and return a dict of booleans."""
-    funcs = ["ulid", "ulid_random", "ulid_time", "ulid_parse",
-             "ulid_batch", "ulid_random_batch"]
-    availability = {f: has_function(db, f) for f in funcs}
-    return availability
-
-
-def exec_one(db, sql: str, params=None):
-    with db.cursor() as cur:
-        cur.execute(sql, params or ())
-        row = cur.fetchone()
-        # If no rows, return None for convenience
-        return None if row is None else row[0]
 
 def test_basic_generation_and_lengths(db, ulid_functions_available):
     # Skip if basic ulid function missing
@@ -295,10 +233,11 @@ def test_required_ulid_functions_and_types_present(db):
         "ulid_timestamp",
         "ulid_generate_with_timestamp",
     ]
-    missing = [f for f in required_funcs if not has_function(db, f)]
+    with db.cursor() as cursor:
+        missing = [f for f in required_funcs if not has_function(cursor, f)]
 
-    if not type_exists(db, "ulid"):
-        missing.append("type:ulid")
+        if not type_exists(cursor, "ulid"):
+            missing.append("type:ulid")
 
     if missing:
         hint = (

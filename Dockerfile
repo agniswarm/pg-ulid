@@ -10,7 +10,7 @@ COPY . /tmp/ulid-extension
 
 RUN apt-get update && \
 		apt-mark hold locales && \
-		apt-get install -y --no-install-recommends build-essential postgresql-server-dev-$PG_MAJOR libmongoc-dev libbson-dev && \
+		apt-get install -y --no-install-recommends build-essential postgresql-server-dev-$PG_MAJOR libmongoc-dev libbson-dev libmongoc-1.0-0 libbson-1.0-0 && \
 		cd /tmp/ulid-extension && \
 		make clean && \
 		make OPTFLAGS="" && \

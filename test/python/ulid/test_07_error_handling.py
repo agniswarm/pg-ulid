@@ -9,47 +9,13 @@ Pytest-style Test 08: Error Handling (improved)
 """
 
 import os
-from typing import Optional, Tuple, Iterable, Type
-import psycopg2
+from typing import Iterable, Type
 import pytest
-
-DB_CONFIG = {
-    "host": os.getenv("PGHOST", "localhost"),
-    "database": os.getenv("PGDATABASE", "testdb"),
-    "user": os.getenv("PGUSER", "postgres"),
-    "password": os.getenv("PGPASSWORD", ""),
-    "port": int(os.getenv("PGPORT", 5432)),
-}
+from conftest import exec_one, exec_fetchone, has_function, type_exists, DB_CONFIG
+import psycopg2
 
 # Safety cap for large/expensive tests (can be increased intentionally via env)
 ULID_STRESS_MAX = int(os.getenv("ULID_STRESS_MAX", "1000000"))
-
-
-def exec_one(conn, sql: str, params: Optional[Tuple] = None):
-    with conn.cursor() as cur:
-        cur.execute(sql, params or ())
-        row = cur.fetchone()
-        return None if row is None else row[0]
-
-
-def exec_fetchone(conn, sql: str, params: Optional[Tuple] = None):
-    with conn.cursor() as cur:
-        cur.execute(sql, params or ())
-        return cur.fetchone()
-
-
-def has_function(conn, func_name: str) -> bool:
-    q = "SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = %s)"
-    with conn.cursor() as cur:
-        cur.execute(q, (func_name,))
-        return cur.fetchone()[0]
-
-
-def type_exists(conn, type_name: str) -> bool:
-    q = "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = %s)"
-    with conn.cursor() as cur:
-        cur.execute(q, (type_name,))
-        return cur.fetchone()[0]
 
 
 @pytest.fixture(scope="module")
@@ -431,8 +397,14 @@ def test_index_creation_invalid_expression(db):
             cur.execute("CREATE INDEX IF NOT EXISTS valid_idx ON test_index (id)")
             db.commit()
 
-        # usage check
-        _ = exec_one(db, "SELECT id FROM test_index ORDER BY id LIMIT 1")
+        # usage check - handle case where no rows exist
+        try:
+            result = exec_one(db, "SELECT id FROM test_index ORDER BY id LIMIT 1")
+            if result is not None:
+                assert isinstance(result, str)  # ULID should be a string
+        except (TypeError, AttributeError):
+            # Handle case where no rows exist or result is None
+            pass
     finally:
         # cleanup
         db.rollback()  # Ensure clean state

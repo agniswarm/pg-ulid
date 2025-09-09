@@ -8,46 +8,10 @@ Run: pytest -q test_ulid_monotonic_pytest.py
 This suite fails loudly if the DB or required ULID functions/types are missing.
 """
 
-import os
-import psycopg2
 import pytest
-from datetime import datetime, timezone
-from typing import Optional, Tuple
-
-DB_CONFIG = {
-    "host": os.getenv("PGHOST", "localhost"),
-    "database": os.getenv("PGDATABASE", "testdb"),
-    "user": os.getenv("PGUSER", "postgres"),
-    "password": os.getenv("PGPASSWORD", ""),
-    "port": int(os.getenv("PGPORT", 5432)),
-}
-
-
-def exec_one(conn, sql: str, params: Optional[Tuple] = None):
-    with conn.cursor() as cur:
-        cur.execute(sql, params or ())
-        row = cur.fetchone()
-        return None if row is None else row[0]
-
-
-def exec_fetchone(conn, sql: str, params: Optional[Tuple] = None):
-    with conn.cursor() as cur:
-        cur.execute(sql, params or ())
-        return cur.fetchone()
-
-
-def has_function(conn, func_name: str) -> bool:
-    q = "SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = %s)"
-    with conn.cursor() as cur:
-        cur.execute(q, (func_name,))
-        return cur.fetchone()[0]
-
-
-def type_exists(conn, type_name: str) -> bool:
-    q = "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = %s)"
-    with conn.cursor() as cur:
-        cur.execute(q, (type_name,))
-        return cur.fetchone()[0]
+from datetime import datetime
+from conftest import exec_one, exec_fetchone, has_function, type_exists, DB_CONFIG
+import psycopg2
 
 
 @pytest.fixture(scope="module")
@@ -260,9 +224,9 @@ def test_final_basic_checks(db):
         cur.execute(
             """
             SELECT
-              ulid_parse(%s)::text      AS parsed_text,
-              ulid_parse(%s)::bytea     AS parsed_bytes,
-              (%s::ulid)::bytea         AS direct_cast_bytes
+                ulid_parse(%s)::text      AS parsed_text,
+                ulid_parse(%s)::bytea     AS parsed_bytes,
+                (%s::ulid)::bytea         AS direct_cast_bytes
             """,
             (known, known, known),
         )

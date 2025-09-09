@@ -276,12 +276,8 @@ CREATE OPERATOR CLASS objectid_hash_ops
 -- OBJECTID GENERATION FUNCTIONS
 -- ============================================================================
 
-CREATE OR REPLACE FUNCTION objectid_generate()
-RETURNS objectid
-AS 'MODULE_PATHNAME', 'objectid_generate'
-LANGUAGE C VOLATILE;
-
-CREATE OR REPLACE FUNCTION objectid_random()
+-- Main ObjectId generation function
+CREATE OR REPLACE FUNCTION objectid()
 RETURNS objectid
 AS 'MODULE_PATHNAME', 'objectid_generate'
 LANGUAGE C VOLATILE;
@@ -379,13 +375,7 @@ $$ LANGUAGE sql IMMUTABLE STRICT;
 CREATE OR REPLACE FUNCTION objectid_batch(count INTEGER)
 RETURNS objectid[]
 AS $$
-    SELECT array_agg(objectid_generate()) FROM generate_series(1, count);
-$$ LANGUAGE sql VOLATILE;
-
-CREATE OR REPLACE FUNCTION objectid_random_batch(count INTEGER)
-RETURNS objectid[]
-AS $$
-    SELECT array_agg(objectid_random()) FROM generate_series(1, count);
+    SELECT array_agg(objectid()) FROM generate_series(1, count);
 $$ LANGUAGE sql VOLATILE;
 
 -- ============================================================================

@@ -18,52 +18,10 @@ Notes:
   when checking round-trips, to avoid differences in textual formatting ( vs 26 chars).
 """
 
-import os
 from datetime import datetime
-from typing import Optional, Tuple
-import psycopg2
 import pytest
-
-DB_CONFIG = {
-    "host": os.getenv("PGHOST", "localhost"),
-    "database": os.getenv("PGDATABASE", "testdb"),
-    "user": os.getenv("PGUSER", "postgres"),
-    "password": os.getenv("PGPASSWORD", ""),
-    "port": int(os.getenv("PGPORT", 5432)),
-}
-
-
-def exec_one(conn, sql: str, params: Optional[Tuple] = None):
-    """
-    Execute SQL and return the first column of the first row, or None if no row.
-    """
-    with conn.cursor() as cur:
-        cur.execute(sql, params or ())
-        row = cur.fetchone()
-        return None if row is None else row[0]
-
-
-def exec_fetchone(conn, sql: str, params: Optional[Tuple] = None):
-    """
-    Execute SQL and return the entire first row tuple, or None if no row.
-    """
-    with conn.cursor() as cur:
-        cur.execute(sql, params or ())
-        return cur.fetchone()
-
-
-def has_function(conn, func_name: str) -> bool:
-    q = "SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = %s)"
-    with conn.cursor() as cur:
-        cur.execute(q, (func_name,))
-        return cur.fetchone()[0]
-
-
-def type_exists(conn, type_name: str) -> bool:
-    q = "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = %s)"
-    with conn.cursor() as cur:
-        cur.execute(q, (type_name,))
-        return cur.fetchone()[0]
+from conftest import exec_one, exec_fetchone, has_function, type_exists, DB_CONFIG
+import psycopg2
 
 
 @pytest.fixture(scope="module")

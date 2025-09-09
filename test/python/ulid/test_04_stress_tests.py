@@ -9,46 +9,9 @@ Fixed and consolidated ULID tests (pytest).
 
 import os
 import time
-from typing import Tuple, Optional
-import psycopg2
 import pytest
-
-DB_CONFIG = {
-    "host": os.getenv("PGHOST", "localhost"),
-    "database": os.getenv("PGDATABASE", "testdb"),
-    "user": os.getenv("PGUSER", "postgres"),
-    "password": os.getenv("PGPASSWORD", ""),
-    "port": int(os.getenv("PGPORT", 5432)),
-}
-
-# Safety cap for stress tests (default 100k). Raise ULID_STRESS_MAX env var to run heavier tests.
-ULID_STRESS_MAX = int(os.getenv("ULID_STRESS_MAX", "100000"))
-
-# ---------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------
-def exec_one(conn, sql: str, params: Optional[Tuple] = None):
-    with conn.cursor() as cur:
-        cur.execute(sql, params or ())
-        row = cur.fetchone()
-        return None if row is None else row[0]
-
-def exec_fetchone(conn, sql: str, params: Optional[Tuple] = None):
-    with conn.cursor() as cur:
-        cur.execute(sql, params or ())
-        return cur.fetchone()
-
-def has_function(conn, func_name: str) -> bool:
-    q = "SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = %s)"
-    with conn.cursor() as cur:
-        cur.execute(q, (func_name,))
-        return cur.fetchone()[0]
-
-def type_exists(conn, type_name: str) -> bool:
-    q = "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = %s)"
-    with conn.cursor() as cur:
-        cur.execute(q, (type_name,))
-        return cur.fetchone()[0]
+from conftest import exec_one, exec_fetchone, has_function, type_exists, DB_CONFIG
+import psycopg2
 
 # Safety cap for stress tests (default 100k). Raise ULID_STRESS_MAX env var to run heavier tests.
 ULID_STRESS_MAX = int(os.getenv("ULID_STRESS_MAX", "100000"))

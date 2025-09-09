@@ -12,46 +12,9 @@ Behavior:
 - Drops the test table at teardown.
 """
 
-import os
-from typing import Optional, Tuple
-import psycopg2
 import pytest
-from datetime import datetime
-
-DB_CONFIG = {
-    "host": os.getenv("PGHOST", "localhost"),
-    "database": os.getenv("PGDATABASE", "testdb"),
-    "user": os.getenv("PGUSER", "postgres"),
-    "password": os.getenv("PGPASSWORD", ""),
-    "port": int(os.getenv("PGPORT", 5432)),
-}
-
-
-def exec_one(conn, sql: str, params: Optional[Tuple] = None):
-    with conn.cursor() as cur:
-        cur.execute(sql, params or ())
-        row = cur.fetchone()
-        return None if row is None else row[0]
-
-
-def exec_fetchone(conn, sql: str, params: Optional[Tuple] = None):
-    with conn.cursor() as cur:
-        cur.execute(sql, params or ())
-        return cur.fetchone()
-
-
-def has_function(conn, func_name: str) -> bool:
-    q = "SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = %s)"
-    with conn.cursor() as cur:
-        cur.execute(q, (func_name,))
-        return cur.fetchone()[0]
-
-
-def type_exists(conn, type_name: str) -> bool:
-    q = "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = %s)"
-    with conn.cursor() as cur:
-        cur.execute(q, (type_name,))
-        return cur.fetchone()[0]
+from conftest import exec_one, exec_fetchone, has_function, type_exists, DB_CONFIG
+import psycopg2
 
 
 @pytest.fixture(scope="module")

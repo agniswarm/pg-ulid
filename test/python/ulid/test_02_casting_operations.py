@@ -11,55 +11,8 @@ Save as: test_ulid_casting_pytest.py
 Run: pytest -q test_ulid_casting_pytest.py
 """
 
-import os
-import psycopg2
-import pytest
 from datetime import datetime, timezone
-
-DB_CONFIG = {
-    "host": os.getenv("PGHOST", "localhost"),
-    "database": os.getenv("PGDATABASE", "testdb"),
-    "user": os.getenv("PGUSER", "postgres"),
-    "password": os.getenv("PGPASSWORD", ""),
-    "port": int(os.getenv("PGPORT", 5432)),
-}
-
-
-def exec_one(conn, sql: str, params=None):
-    with conn.cursor() as cur:
-        cur.execute(sql, params or ())
-        row = cur.fetchone()
-        return None if row is None else row[0]
-
-
-def has_function(conn, func_name: str) -> bool:
-    q = "SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = %s)"
-    with conn.cursor() as cur:
-        cur.execute(q, (func_name,))
-        return cur.fetchone()[0]
-
-
-def type_exists(conn, type_name: str) -> bool:
-    q = "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = %s)"
-    with conn.cursor() as cur:
-        cur.execute(q, (type_name,))
-        return cur.fetchone()[0]
-
-
-@pytest.fixture(scope="module")
-def db():
-    """Module-scoped DB connection. Fail the test run if cannot connect."""
-    try:
-        conn = psycopg2.connect(**DB_CONFIG)
-    except Exception as exc:
-        pytest.fail(f"Cannot connect to database: {exc}", pytrace=False)
-    try:
-        yield conn
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+from conftest import exec_one
 
 def test_text_to_ulid_and_back_casting(db):
     """Text to ULID and ULID to text casting should work and preserve value."""
