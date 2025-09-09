@@ -133,6 +133,12 @@ CREATE TABLE mixed_table (
     converted_ulid ulid GENERATED ALWAYS AS (objectid_col::ulid) STORED,
     converted_objectid objectid GENERATED ALWAYS AS (ulid_col::objectid) STORED
 );
+
+-- Insert data
+INSERT INTO users (name) VALUES ('John Doe'), ('Jane Smith');
+
+-- Query with ULID
+SELECT * FROM users WHERE id = '01ARZ3NDEKTSV4RRFFQ69G5FAV'::ulid;
 ```
 
 ### Casting Operations
