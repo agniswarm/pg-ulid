@@ -48,6 +48,11 @@ OPTFLAGS ?= /O2
 # Add to PostgreSQL compile flags
 PG_CFLAGS += $(OPTFLAGS) /std:c11
 
+# Special flags for ObjectId compilation (MongoDB C driver needs C99+ features)
+ifeq ($(MONGOC_AVAILABLE),yes)
+  PG_CFLAGS += /wd4090  # Disable "declaration after statement" warning on MSVC
+endif
+
 # Add ULID C flags
 CPPFLAGS += $(ULID_C_INCDIR)
 PG_CPPFLAGS += $(ULID_C_INCDIR)
@@ -92,6 +97,12 @@ all: $(SHLIB) $(DATA)
 
 .c.obj:
 	$(CC) $(CFLAGS) /c $< /Fo$@
+
+# Special build rule for ObjectId (needs C99+ features for MongoDB C driver)
+ifeq ($(MONGOC_AVAILABLE),yes)
+src\objectid.obj: src\objectid.c
+	$(CC) $(CFLAGS) /wd4090 /c $< /Fo$@
+endif
 
 $(SHLIB): $(OBJS)
 	$(CC) $(CFLAGS) $(OBJS) $(LIBS) /link /DLL /OUT:$(SHLIB)

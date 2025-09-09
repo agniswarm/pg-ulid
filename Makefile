@@ -79,7 +79,12 @@ endif
 
 # Add to PostgreSQL compile flags
 PG_CFLAGS += $(OPTFLAGS) $(ARCH_FLAGS) -std=gnu11 -fno-lto -fno-fat-lto-objects \
-              -Wno-unused-variable -Wno-unused-function
+             -Wno-unused-variable -Wno-unused-function
+
+# Special flags for ObjectId compilation (MongoDB C driver needs C99+ features)
+ifeq ($(MONGOC_AVAILABLE),yes)
+  PG_CFLAGS += -Wno-declaration-after-statement
+endif
 
 # Make sure include flags are available in every relevant variable so both
 # gcc compile and clang LTO/emit-llvm compile steps see them.
@@ -106,6 +111,12 @@ CC ?= $(HOSTCC)
 # build rule for object files under src/
 src/%.o: src/%.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) -c $< -o $@
+
+# Special build rule for ObjectId (needs C99+ features for MongoDB C driver)
+ifeq ($(MONGOC_AVAILABLE),yes)
+src/objectid.o: src/objectid.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) -Wno-declaration-after-statement -c $< -o $@
+endif
 
 # Use standard PostgreSQL testing
 # installcheck target is provided by PGXS

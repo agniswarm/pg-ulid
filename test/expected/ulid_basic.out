@@ -1,0 +1,50 @@
+-- Test basic ULID functionality
+CREATE EXTENSION IF NOT EXISTS ulid;
+
+-- Test ULID generation
+SELECT ulid_generate() IS NOT NULL AS ulid_generated;
+ ulid_generated 
+----------------
+ t
+(1 row)
+
+-- Test ULID with timestamp
+SELECT ulid_generate_with_timestamp(extract(epoch from now())::bigint) IS NOT NULL AS ulid_with_timestamp;
+ ulid_with_timestamp 
+---------------------
+ t
+(1 row)
+
+-- Test ULID parsing
+SELECT ulid_parse('01ARZ3NDEKTSV4RRFFQ69G5FAV') IS NOT NULL AS ulid_parsed;
+ ulid_parsed 
+-------------
+ t
+(1 row)
+
+-- Test ULID timestamp extraction
+SELECT ulid_timestamp(ulid_generate()) IS NOT NULL AS ulid_timestamp;
+ ulid_timestamp 
+----------------
+ t
+(1 row)
+
+-- Test ULID comparison
+SELECT ulid_generate() < ulid_generate() AS ulid_comparison;
+ ulid_comparison 
+-----------------
+ t
+(1 row)
+
+-- Test ULID casting
+SELECT ulid_generate()::text IS NOT NULL AS ulid_to_text;
+ ulid_to_text 
+--------------
+ t
+(1 row)
+
+SELECT '01ARZ3NDEKTSV4RRFFQ69G5FAV'::ulid IS NOT NULL AS text_to_ulid;
+ text_to_ulid 
+--------------
+ t
+(1 row)
