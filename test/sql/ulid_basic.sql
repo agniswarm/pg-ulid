@@ -1,21 +1,20 @@
 -- Test basic ULID functionality
 CREATE EXTENSION IF NOT EXISTS ulid;
 
--- Test ULID generation
-SELECT ulid_generate() IS NOT NULL AS ulid_generated;
+-- Test ulid() function
+SELECT ulid() IS NOT NULL AS ulid_generated;
 
--- Test ULID with timestamp
-SELECT ulid_generate_with_timestamp(extract(epoch from now())::bigint) IS NOT NULL AS ulid_with_timestamp;
+-- Test ulid_random() function
+SELECT ulid_random() IS NOT NULL AS ulid_random_generated;
 
--- Test ULID parsing
-SELECT ulid_parse('01ARZ3NDEKTSV4RRFFQ69G5FAV') IS NOT NULL AS ulid_parsed;
+-- Test ulid_time() function
+SELECT ulid_time((extract(epoch from now()) * 1000)::BIGINT) IS NOT NULL AS ulid_time_generated;
 
--- Test ULID timestamp extraction
-SELECT ulid_timestamp(ulid_generate()) IS NOT NULL AS ulid_timestamp;
+-- Test ulid_batch() function
+SELECT array_length(ulid_batch(5), 1) = 5 AS ulid_batch_test;
 
--- Test ULID comparison
-SELECT ulid_generate() < ulid_generate() AS ulid_comparison;
+-- Test ulid_random_batch() function
+SELECT array_length(ulid_random_batch(3), 1) = 3 AS ulid_random_batch_test;
 
--- Test ULID casting
-SELECT ulid_generate()::text IS NOT NULL AS ulid_to_text;
-SELECT '01ARZ3NDEKTSV4RRFFQ69G5FAV'::ulid IS NOT NULL AS text_to_ulid;
+-- Test ulid_parse() function
+SELECT * FROM ulid_parse('01K4FQ7QN4ZSW0SG5XACGM2HB4') IS NOT NULL AS ulid_parse_test;
