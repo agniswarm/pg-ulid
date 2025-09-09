@@ -35,6 +35,9 @@ build.log
 *.control.bak
 *.sql.bak
 
+# Assembled SQL files (build-time generated)
+sql/assembled/
+
 # Test artifacts
 test_results/
 coverage.out
@@ -101,3 +104,4 @@ coverage.xml
 *.rej
 *.patch
 example/
+!.gitkeep

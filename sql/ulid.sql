@@ -1,5 +1,9 @@
 -- ULID Extension for PostgreSQL
--- Version 0.1.1
+-- Version 0.2.0
+
+-- ============================================================================
+-- ULID TYPE DEFINITION
+-- ============================================================================
 
 -- Define the ULID type
 CREATE TYPE ulid;
@@ -7,27 +11,27 @@ CREATE TYPE ulid;
 -- Define C functions for the ULID type
 CREATE OR REPLACE FUNCTION ulid_in(cstring)
 RETURNS ulid
-AS 'MODULE_PATHNAME', 'ulid_in'
+AS '$libdir/ulid', 'ulid_in'
 LANGUAGE C IMMUTABLE STRICT;
 
 CREATE OR REPLACE FUNCTION ulid_out(ulid)
 RETURNS cstring
-AS 'MODULE_PATHNAME', 'ulid_out'
+AS '$libdir/ulid', 'ulid_out'
 LANGUAGE C IMMUTABLE STRICT;
 
 CREATE OR REPLACE FUNCTION ulid_send(ulid)
 RETURNS bytea
-AS 'MODULE_PATHNAME', 'ulid_send'
+AS '$libdir/ulid', 'ulid_send'
 LANGUAGE C IMMUTABLE STRICT;
 
 CREATE OR REPLACE FUNCTION ulid_recv(internal)
 RETURNS ulid
-AS 'MODULE_PATHNAME', 'ulid_recv'
+AS '$libdir/ulid', 'ulid_recv'
 LANGUAGE C IMMUTABLE STRICT;
 
 CREATE OR REPLACE FUNCTION ulid_cmp(ulid, ulid)
 RETURNS integer
-AS 'MODULE_PATHNAME', 'ulid_cmp'
+AS '$libdir/ulid', 'ulid_cmp'
 LANGUAGE C IMMUTABLE STRICT;
 
 -- Define the ULID type
@@ -42,38 +46,44 @@ CREATE TYPE ulid (
     STORAGE = plain
 );
 
--- Define comparison operators
+-- ============================================================================
+-- ULID COMPARISON FUNCTIONS
+-- ============================================================================
+
 CREATE OR REPLACE FUNCTION ulid_lt(ulid, ulid)
 RETURNS boolean
-AS 'MODULE_PATHNAME', 'ulid_lt'
+AS '$libdir/ulid', 'ulid_lt'
 LANGUAGE C IMMUTABLE STRICT;
 
 CREATE OR REPLACE FUNCTION ulid_le(ulid, ulid)
 RETURNS boolean
-AS 'MODULE_PATHNAME', 'ulid_le'
+AS '$libdir/ulid', 'ulid_le'
 LANGUAGE C IMMUTABLE STRICT;
 
 CREATE OR REPLACE FUNCTION ulid_eq(ulid, ulid)
 RETURNS boolean
-AS 'MODULE_PATHNAME', 'ulid_eq'
+AS '$libdir/ulid', 'ulid_eq'
 LANGUAGE C IMMUTABLE STRICT;
 
 CREATE OR REPLACE FUNCTION ulid_ge(ulid, ulid)
 RETURNS boolean
-AS 'MODULE_PATHNAME', 'ulid_ge'
+AS '$libdir/ulid', 'ulid_ge'
 LANGUAGE C IMMUTABLE STRICT;
 
 CREATE OR REPLACE FUNCTION ulid_gt(ulid, ulid)
 RETURNS boolean
-AS 'MODULE_PATHNAME', 'ulid_gt'
+AS '$libdir/ulid', 'ulid_gt'
 LANGUAGE C IMMUTABLE STRICT;
 
 CREATE OR REPLACE FUNCTION ulid_ne(ulid, ulid)
 RETURNS boolean
-AS 'MODULE_PATHNAME', 'ulid_ne'
+AS '$libdir/ulid', 'ulid_ne'
 LANGUAGE C IMMUTABLE STRICT;
 
--- Define operators
+-- ============================================================================
+-- ULID OPERATORS
+-- ============================================================================
+
 CREATE OPERATOR < (LEFTARG = ulid, RIGHTARG = ulid, PROCEDURE = ulid_lt);
 CREATE OPERATOR <= (LEFTARG = ulid, RIGHTARG = ulid, PROCEDURE = ulid_le);
 CREATE OPERATOR = (LEFTARG = ulid, RIGHTARG = ulid, PROCEDURE = ulid_eq);
@@ -81,7 +91,10 @@ CREATE OPERATOR >= (LEFTARG = ulid, RIGHTARG = ulid, PROCEDURE = ulid_ge);
 CREATE OPERATOR > (LEFTARG = ulid, RIGHTARG = ulid, PROCEDURE = ulid_gt);
 CREATE OPERATOR <> (LEFTARG = ulid, RIGHTARG = ulid, PROCEDURE = ulid_ne);
 
--- Define operator classes
+-- ============================================================================
+-- ULID OPERATOR CLASSES
+-- ============================================================================
+
 CREATE OPERATOR CLASS ulid_ops
     DEFAULT FOR TYPE ulid USING btree AS
     OPERATOR 1 <,
@@ -94,7 +107,7 @@ CREATE OPERATOR CLASS ulid_ops
 -- Hash function for ULID type
 CREATE OR REPLACE FUNCTION ulid_hash(ulid)
 RETURNS integer
-AS 'MODULE_PATHNAME', 'ulid_hash'
+AS '$libdir/ulid', 'ulid_hash'
 LANGUAGE C IMMUTABLE STRICT;
 
 CREATE OPERATOR CLASS ulid_hash_ops
@@ -102,36 +115,52 @@ CREATE OPERATOR CLASS ulid_hash_ops
     OPERATOR 1 =,
     FUNCTION 1 ulid_hash(ulid);
 
--- Define ULID generation functions
+-- ============================================================================
+-- ULID GENERATION FUNCTIONS
+-- ============================================================================
+
 CREATE OR REPLACE FUNCTION ulid_random()
 RETURNS ulid
-AS 'MODULE_PATHNAME', 'ulid_generate'
+AS '$libdir/ulid', 'ulid_generate'
 LANGUAGE C VOLATILE;
 
 CREATE OR REPLACE FUNCTION ulid()
 RETURNS ulid
-AS 'MODULE_PATHNAME', 'ulid_generate_monotonic'
+AS '$libdir/ulid', 'ulid_generate_monotonic'
 LANGUAGE C VOLATILE;
 
--- Define utility functions
+-- ============================================================================
+-- ULID UTILITY FUNCTIONS
+-- ============================================================================
+
 CREATE OR REPLACE FUNCTION ulid_timestamp(ulid)
 RETURNS bigint
-AS 'MODULE_PATHNAME', 'ulid_timestamp'
+AS '$libdir/ulid', 'ulid_timestamp'
 LANGUAGE C IMMUTABLE STRICT;
 
 CREATE OR REPLACE FUNCTION ulid_to_uuid(ulid)
 RETURNS uuid
-AS 'MODULE_PATHNAME', 'ulid_to_uuid'
+AS '$libdir/ulid', 'ulid_to_uuid'
 LANGUAGE C IMMUTABLE STRICT;
 
 CREATE OR REPLACE FUNCTION ulid_from_uuid(uuid)
 RETURNS ulid
-AS 'MODULE_PATHNAME', 'ulid_from_uuid'
+AS '$libdir/ulid', 'ulid_from_uuid'
 LANGUAGE C IMMUTABLE STRICT;
 
--- Casting functions will be added later
+-- ============================================================================
+-- ULID CORE FUNCTIONS (C-based)
+-- ============================================================================
 
--- Basic convenience functions (removed duplicates - using C functions directly)
+-- Generate ULID with specific timestamp
+CREATE OR REPLACE FUNCTION ulid_generate_with_timestamp(timestamp_ms BIGINT)
+RETURNS ulid
+AS '$libdir/ulid', 'ulid_generate_with_timestamp'
+LANGUAGE C IMMUTABLE STRICT;
+
+-- ============================================================================
+-- ULID CONVENIENCE FUNCTIONS (SQL-based)
+-- ============================================================================
 
 -- Generate ULID with specific timestamp
 CREATE OR REPLACE FUNCTION ulid_time(timestamp_ms BIGINT)
@@ -174,11 +203,9 @@ AS $$
     SELECT array_agg(ulid_random()) FROM generate_series(1, count);
 $$ LANGUAGE sql VOLATILE;
 
--- Generate ULID with specific timestamp
-CREATE OR REPLACE FUNCTION ulid_generate_with_timestamp(timestamp_ms BIGINT)
-RETURNS ulid
-AS 'MODULE_PATHNAME', 'ulid_generate_with_timestamp'
-LANGUAGE C IMMUTABLE STRICT;
+-- ============================================================================
+-- ULID CASTING FUNCTIONS
+-- ============================================================================
 
 -- Convert timestamp to ULID (for casting)
 CREATE OR REPLACE FUNCTION timestamp_to_ulid_cast(timestamp_val TIMESTAMP)
@@ -235,7 +262,10 @@ AS $$
     SELECT ulid_in(encode(bytea_val, 'base64')::cstring);
 $$ LANGUAGE sql IMMUTABLE STRICT;
 
--- Define the casts
+-- ============================================================================
+-- ULID CASTS
+-- ============================================================================
+
 CREATE CAST (text AS ulid) WITH FUNCTION text_to_ulid_cast(text) AS ASSIGNMENT;
 CREATE CAST (ulid AS text) WITH FUNCTION ulid_to_text_cast(ulid) AS ASSIGNMENT;
 CREATE CAST (timestamp AS ulid) WITH FUNCTION timestamp_to_ulid_cast(timestamp) AS ASSIGNMENT;
