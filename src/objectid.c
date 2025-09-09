@@ -38,7 +38,7 @@
 #endif
 
 /* MongoDB C driver includes */
-#include <bson/bson.h>
+#include "objectid_bson.h"
 #include <mongoc/mongoc.h>
 
 /* PostgreSQL module magic - defined in ulid.c */
@@ -97,7 +97,6 @@ PG_FUNCTION_INFO_V1(objectid_to_text_cast);
  * Helper declarations
  * ------------------------------------------------------------------*/
 static bool is_valid_hex_string(const char* str, size_t len);
-static void generate_random_bytes(unsigned char* bytes, size_t len);
 
 /* convert: copy ObjectId -> bson_oid_t (caller provides output) */
 static void objectid_to_bson_oid(const ObjectId* oid, bson_oid_t* out);
@@ -632,37 +631,6 @@ static bool is_valid_hex_string(const char* str, size_t len)
     return true;
 }
 
-static void generate_random_bytes(unsigned char* bytes, size_t len)
-{
-#ifdef _WIN32
-    HCRYPTPROV hProv;
-    if (CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT))
-    {
-        (void)CryptGenRandom(hProv, (DWORD)len, bytes);
-        CryptReleaseContext(hProv, 0);
-    }
-    else
-    {
-        srand((unsigned int)time(NULL));
-        for (size_t i = 0; i < len; i++)
-            bytes[i] = (unsigned char)(rand() & 0xff);
-    }
-#else
-    FILE* urandom = fopen("/dev/urandom", "rb");
-    if (urandom)
-    {
-        size_t r = fread(bytes, 1, len, urandom);
-        (void)r;
-        fclose(urandom);
-    }
-    else
-    {
-        srand((unsigned int)time(NULL));
-        for (size_t i = 0; i < len; i++)
-            bytes[i] = (unsigned char)(rand() & 0xff);
-    }
-#endif
-}
 
 /* copy ObjectId bytes into a bson_oid_t */
 static void objectid_to_bson_oid(const ObjectId* oid, bson_oid_t* out)
