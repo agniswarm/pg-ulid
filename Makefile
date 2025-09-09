@@ -28,7 +28,7 @@ else
 endif
 
 # ---------- MongoDB C driver detection ----------
-# Try pkg-config first (preferred)
+# Try pkg-config first (preferred - should work after CI installation)
 PKG_MONGOC_CFLAGS := $(shell pkg-config --cflags libmongoc-1.0 2>/dev/null || echo "")
 PKG_MONGOC_LIBS   := $(shell pkg-config --libs libmongoc-1.0 2>/dev/null || echo "")
 
@@ -38,15 +38,17 @@ ifneq ($(PKG_MONGOC_CFLAGS),)
   MONGOC_LIBS := $(PKG_MONGOC_LIBS)
   MONGOC_AVAILABLE = yes
 else
-  # Fallback to standard paths
+  # Fallback: simple check for standard locations
+  # CI should install libraries in standard locations
   MONGOC_CFLAGS := -I/usr/include/libbson-1.0 -I/usr/include/libmongoc-1.0
   MONGOC_LIBS := -lmongoc-1.0 -lbson-1.0
-  # Check if fallback paths exist
-  ifeq ($(wildcard /usr/include/libbson-1.0/bson.h),)
+  
+  # Simple check - if header exists, assume libraries are available
+  ifneq ($(wildcard /usr/include/libbson-1.0/bson.h),)
+    MONGOC_AVAILABLE = yes
+  else
     MONGOC_AVAILABLE = no
     $(warning MongoDB C driver not found. ObjectId support will be disabled.)
-  else
-    MONGOC_AVAILABLE = yes
   endif
 endif
 
