@@ -119,7 +119,7 @@ src/objectid.o: src/objectid.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) -Wno-declaration-after-statement -c $< -o $@
 endif
 
-Use standard PostgreSQL testing
+# Use standard PostgreSQL testing
 installcheck: all
 	@echo "Running extension tests via test/build/ci.sh..."
 	@echo "Data files: $(DATA)"
