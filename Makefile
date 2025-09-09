@@ -82,20 +82,7 @@ endif
 PG_CFLAGS += $(OPTFLAGS) $(ARCH_FLAGS) -std=gnu11 -fno-lto \
              -Wno-unused-variable -Wno-unused-function
 
-# Add -fno-fat-lto-objects only if supported (not on older clang versions)
-# Check if we're on macOS and if clang supports this flag
-ifeq ($(shell uname -s), Darwin)
-  # On macOS, only add if clang version supports it (rough check)
-  ifeq ($(shell $(CC) --version 2>/dev/null | grep -q "clang" && echo yes),yes)
-    # Try to compile a test with the flag
-    ifeq ($(shell echo 'int main(){}' | $(CC) -fno-fat-lto-objects -x c - -o /dev/null 2>/dev/null && echo yes),yes)
-      PG_CFLAGS += -fno-fat-lto-objects
-    endif
-  endif
-else
-  # On other systems, add the flag
-  PG_CFLAGS += -fno-fat-lto-objects
-endif
+# Note: -fno-fat-lto-objects is added via CI environment variables for systems that support it
 
 # Special flags for ObjectId compilation (MongoDB C driver needs C99+ features)
 ifeq ($(MONGOC_AVAILABLE),yes)
@@ -135,7 +122,7 @@ src/objectid.o: src/objectid.c
 endif
 
 # Use standard PostgreSQL testing
-installcheck: install
+installcheck: all
 	@echo "Running extension tests via test/build/ci.sh..."
 	@echo "Data files: $(DATA)"
 	@if [ -f "test/build/ci.sh" ]; then \
