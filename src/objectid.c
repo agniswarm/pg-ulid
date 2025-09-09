@@ -38,7 +38,12 @@
 #endif
 
 /* MongoDB C driver includes */
+/* Disable C90 declaration-after-statement warning for BSON headers */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeclaration-after-statement"
 #include <bson/bson.h>
+#pragma GCC diagnostic pop
+
 #include <mongoc/mongoc.h>
 
 /* PostgreSQL module magic - defined in ulid.c */
