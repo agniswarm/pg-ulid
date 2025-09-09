@@ -1,0 +1,24 @@
+# .clang-format - conservative C style for PostgreSQL extensions
+BasedOnStyle: LLVM
+# Language: C
+# keep lines reasonably wide for embedded SQL etc.
+ColumnLimit: 100
+
+# indentation and spacing
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+AllowShortFunctionsOnASingleLine: Empty
+
+# brace and block handling (conservative)
+BreakBeforeBraces: Allman
+
+# keep existing formatting of macros and comments by not being aggressive
+SortIncludes: false
+SpacesBeforeTrailingComments: 1
+AllowShortIfStatementsOnASingleLine: false
+
+# control how it treats string/char literals and concatenation
+PenaltyBreakString: 1000
+DerivePointerAlignment: false
+PointerAlignment: Left

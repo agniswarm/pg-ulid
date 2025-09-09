@@ -1,47 +1,61 @@
-# Makefile for ulid extension (Go implementation) - Windows
-
 EXTENSION = ulid
-DATA = sql/ulid--1.0.0.sql
+EXTVERSION = 0.1.1
 
-# PostgreSQL extension build system
-PG_CONFIG = pg_config
-PGXS := $(shell $(PG_CONFIG) --pgxs)
-include $(PGXS)
+DATA_built = sql\$(EXTENSION)--$(EXTVERSION).sql
+OBJS = src\ulid.obj
 
-# Override the default build target
-all: ulid_generator.exe
+# For /arch flags
+# https://learn.microsoft.com/en-us/cpp/build/reference/arch-minimum-cpu-architecture
+OPTFLAGS =
 
-# Build the Go binary
-ulid_generator.exe: src/ulid.go
-	cd src && go mod download
-	cd src && go build -o ../ulid_generator.exe ulid.go
+# For auto-vectorization (MSVC needs /O2 /fp:fast)
+PG_CFLAGS = $(PG_CFLAGS) $(OPTFLAGS) /O2 /fp:fast
 
-# Install the binary
-install: ulid_generator.exe
-	# Create directory and install the Go binary
-	@if not exist "$(DESTDIR)\usr\local\bin" mkdir "$(DESTDIR)\usr\local\bin"
-	copy ulid_generator.exe "$(DESTDIR)\usr\local\bin\ulid_generator.exe"
-	# Install extension files manually
-	@if not exist "$(DESTDIR)\usr\local\share\postgresql\extension" mkdir "$(DESTDIR)\usr\local\share\postgresql\extension"
-	copy ulid.control "$(DESTDIR)\usr\local\share\postgresql\extension\"
-	copy sql\ulid--1.0.0.sql "$(DESTDIR)\usr\local\share\postgresql\extension\"
+# TODO use pg_config
+!ifndef PGROOT
+!error PGROOT is not set
+!endif
+BINDIR = $(PGROOT)\bin
+INCLUDEDIR = $(PGROOT)\include
+INCLUDEDIR_SERVER = $(PGROOT)\include\server
+LIBDIR = $(PGROOT)\lib
+PKGLIBDIR = $(PGROOT)\lib
+SHAREDIR = $(PGROOT)\share
 
-# Run tests
-test:
-	cd test && go test -v
+CFLAGS = /nologo /I"$(INCLUDEDIR_SERVER)\port\win32_msvc" /I"$(INCLUDEDIR_SERVER)\port\win32" /I"$(INCLUDEDIR_SERVER)" /I"$(INCLUDEDIR)"
 
-# Clean build artifacts
+CFLAGS = $(CFLAGS) $(PG_CFLAGS)
+
+SHLIB = $(EXTENSION).dll
+
+LIBS = "$(LIBDIR)\postgres.lib" advapi32.lib
+
+all: $(SHLIB) $(DATA_built)
+
+.c.obj:
+	$(CC) $(CFLAGS) /c $< /Fo$@
+
+$(SHLIB): $(OBJS)
+	$(CC) $(CFLAGS) $(OBJS) $(LIBS) /link /DLL /DEF:ulid.def /OUT:$(SHLIB)
+
+# SQL file already exists, no need to copy
+
+install: all
+	copy $(SHLIB) "$(PKGLIBDIR)"
+	copy $(EXTENSION).control "$(SHAREDIR)\extension"
+	copy sql\$(EXTENSION)--*.sql "$(SHAREDIR)\extension"
+
+installcheck: all
+	@echo "Running Windows CI batch test script..."
+	cmd.exe /C "cd /d %CD% && test\build\ci.bat"
+
+uninstall:
+	del /f "$(PKGLIBDIR)\$(SHLIB)"
+	del /f "$(SHAREDIR)\extension\$(EXTENSION).control"
+	del /f "$(SHAREDIR)\extension\$(EXTENSION)--*.sql"
+
+
 clean:
-	del /Q ulid_generator.exe 2>nul || true
-	cd test && go clean -testcache
-
-# Help target
-help:
-	@echo Available targets:
-	@echo   all      - Build the extension (default)
-	@echo   install  - Install the extension
-	@echo   test     - Run tests
-	@echo   clean    - Clean build artifacts
-	@echo   help     - Show this help message
-
-.PHONY: all install test clean help
+	del /f $(SHLIB) $(EXTENSION).lib $(EXTENSION).exp
+	del /f $(DATA_built)
+	del /f $(OBJS)
