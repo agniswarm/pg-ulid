@@ -39,25 +39,33 @@ else
 endif
 
 # ---------- Mongo C driver detection ----------
-# Try pkg-config first (preferred), but handle case where pkg-config is not available
+# Try pkg-config first (preferred)
 PKG_MONGOC_CFLAGS := $(shell pkg-config --cflags libmongoc-1.0 2>/dev/null || echo "")
-PKG_MONGOC_LIBS   := $(shell pkg-config --libs   libmongoc-1.0 2>/dev/null || echo "")
+PKG_MONGOC_LIBS   := $(shell pkg-config --libs libmongoc-1.0 2>/dev/null || echo "")
 
-# Fallback prefix (user can override, e.g. make MONGO_PREFIX=/usr/local)
-MONGO_PREFIX ?= /usr
-
-# Check if pkg-config worked by testing if the output contains include paths
-PKG_WORKED := $(shell echo "$(PKG_MONGOC_CFLAGS)" | grep -q "include" && echo "yes" || echo "no")
-
-ifeq ($(PKG_WORKED),yes)
+# Check if pkg-config worked
+ifneq ($(PKG_MONGOC_CFLAGS),)
   MONGOC_CFLAGS := $(PKG_MONGOC_CFLAGS)
   MONGOC_LIBS := $(PKG_MONGOC_LIBS)
+  MONGOC_AVAILABLE = yes
 else
-  # Use fallback paths
-  MONGOC_CFLAGS := -I$(MONGO_PREFIX)/include/libbson-1.0 -I$(MONGO_PREFIX)/include/libmongoc-1.0
-  MONGOC_LIBS := -L$(MONGO_PREFIX)/lib -lmongoc-1.0 -lbson-1.0
+  # Fallback to standard paths
+  MONGOC_CFLAGS := -I/usr/include/libbson-1.0 -I/usr/include/libmongoc-1.0
+  MONGOC_LIBS := -lmongoc-1.0 -lbson-1.0
+  # Check if fallback paths exist
+  ifeq ($(wildcard /usr/include/libbson-1.0/bson.h),)
+    MONGOC_AVAILABLE = no
+    $(warning MongoDB C driver not found. ObjectId support will be disabled.)
+  else
+    MONGOC_AVAILABLE = yes
+  endif
 endif
-# ---------- end mongo detection ----------
+
+# Conditionally add ObjectId support
+ifeq ($(MONGOC_AVAILABLE),yes)
+  OBJS += src/objectid.o
+  DATA += sql/$(EXTENSION)--$(EXTVERSION)-objectid.sql
+endif
 
 # Target arch flags
 TARGET_ARCH ?= $(shell uname -m)
@@ -76,13 +84,22 @@ PG_CFLAGS += $(OPTFLAGS) $(ARCH_FLAGS) -std=gnu11 -fno-lto -fno-fat-lto-objects 
 # Make sure include flags are available in every relevant variable so both
 # gcc compile and clang LTO/emit-llvm compile steps see them.
 # (Some PGXS rules use CPPFLAGS/CFLAGS directly for different compile invocations.)
-CPPFLAGS += $(MONGOC_CFLAGS) $(ULID_C_INCDIR)
-PG_CPPFLAGS += $(MONGOC_CFLAGS) $(ULID_C_INCDIR)
-CFLAGS += $(MONGOC_CFLAGS)
-PG_CFLAGS += $(MONGOC_CFLAGS)
+CPPFLAGS += $(ULID_C_INCDIR)
+PG_CPPFLAGS += $(ULID_C_INCDIR)
+CFLAGS += $(ULID_C_INCDIR)
+PG_CFLAGS += $(ULID_C_INCDIR)
+
+# Add MongoDB flags only if available
+ifeq ($(MONGOC_AVAILABLE),yes)
+  CPPFLAGS += $(MONGOC_CFLAGS)
+  PG_CPPFLAGS += $(MONGOC_CFLAGS)
+  CFLAGS += $(MONGOC_CFLAGS)
+  PG_CFLAGS += $(MONGOC_CFLAGS)
+  SHLIB_LINK += $(MONGOC_LIBS)
+endif
 
 # Linker flags
-SHLIB_LINK += $(MONGOC_LIBS) $(ULID_C_LIBDIR) $(ULID_C_LIBS)
+SHLIB_LINK += $(ULID_C_LIBDIR) $(ULID_C_LIBS)
 
 CC ?= $(HOSTCC)
 

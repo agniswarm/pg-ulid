@@ -38,6 +38,13 @@ jobs:
           pg_config --version || echo "pg_config not found"
           echo "PostgreSQL installation verified"
 
+      - name: Install MongoDB C driver libraries
+        run: |
+          echo "Installing MongoDB C driver libraries..."
+          sudo apt-get update
+          sudo apt-get install -y libmongoc-dev libbson-dev
+          echo "MongoDB C driver libraries installed"
+
       - name: Build and test extension
         uses: agniswarm/pg-ext-actions/build-check@master
         with:
