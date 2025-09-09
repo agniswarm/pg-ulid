@@ -1,15 +1,75 @@
-EXTENSION = ulid
-EXTVERSION = 0.1.1
+#
+# Makefile.win - Windows build for PostgreSQL ULID extension
+# Based on pgvector's Windows build system with conditional MongoDB support
+#
 
-DATA_built = sql\$(EXTENSION)--$(EXTVERSION).sql
+EXTENSION = ulid
+EXTVERSION = 0.2.0
+
+MODULE_big = $(EXTENSION)
 OBJS = src\ulid.obj
+DATA = $(EXTENSION).control sql\$(EXTENSION)--$(EXTVERSION).sql
+
+# Optional: point to ulid-c include/lib if you want to use it
+ULID_C_DIR ?=
+ifdef ULID_C_DIR
+  ULID_C_INCDIR = /I"$(ULID_C_DIR)\include"
+  ULID_C_LIBDIR = /LIBPATH:"$(ULID_C_DIR)\lib"
+  ULID_C_LIBS   = ulid.lib
+else
+  ULID_C_INCDIR =
+  ULID_C_LIBDIR =
+  ULID_C_LIBS =
+endif
+
+# ---------- MongoDB C driver detection ----------
+# Check for MongoDB C driver in common locations
+MONGOC_INCDIR = /I"C:\mongo-c-driver\include\libbson-1.0" /I"C:\mongo-c-driver\include\libmongoc-1.0"
+MONGOC_LIBDIR = /LIBPATH:"C:\mongo-c-driver\lib"
+MONGOC_LIBS = mongoc-1.0.lib bson-1.0.lib
+
+# Check if MongoDB headers exist
+ifeq ($(wildcard C:\mongo-c-driver\include\libbson-1.0\bson.h),)
+  MONGOC_AVAILABLE = no
+  $(warning MongoDB C driver not found. ObjectId support will be disabled.)
+else
+  MONGOC_AVAILABLE = yes
+endif
+
+# Conditionally add ObjectId support
+ifeq ($(MONGOC_AVAILABLE),yes)
+  OBJS += src\objectid.obj
+endif
 
 # For /arch flags
 # https://learn.microsoft.com/en-us/cpp/build/reference/arch-minimum-cpu-architecture
-OPTFLAGS =
+OPTFLAGS ?= /O2
 
-# For auto-vectorization (MSVC needs /O2 /fp:fast)
-PG_CFLAGS = $(PG_CFLAGS) $(OPTFLAGS) /O2 /fp:fast
+# Add to PostgreSQL compile flags
+PG_CFLAGS += $(OPTFLAGS) /std:c11
+
+# Special flags for ObjectId compilation (MongoDB C driver needs C99+ features)
+ifeq ($(MONGOC_AVAILABLE),yes)
+  PG_CFLAGS += /wd4090  # Disable "declaration after statement" warning on MSVC
+endif
+
+# Add ULID C flags
+CPPFLAGS += $(ULID_C_INCDIR)
+PG_CPPFLAGS += $(ULID_C_INCDIR)
+CFLAGS += $(ULID_C_INCDIR)
+PG_CFLAGS += $(ULID_C_INCDIR)
+
+# Add MongoDB flags only if available
+ifeq ($(MONGOC_AVAILABLE),yes)
+  CPPFLAGS += $(MONGOC_INCDIR)
+  PG_CPPFLAGS += $(MONGOC_INCDIR)
+  CFLAGS += $(MONGOC_INCDIR)
+  PG_CFLAGS += $(MONGOC_INCDIR)
+  SHLIB_LINK += $(MONGOC_LIBDIR) $(MONGOC_LIBS)
+endif
+
+# Linker flags
+SHLIB_LINK += $(ULID_C_LIBDIR) $(ULID_C_LIBS)
 
 # TODO use pg_config
 !ifndef PGROOT
@@ -22,29 +82,47 @@ LIBDIR = $(PGROOT)\lib
 PKGLIBDIR = $(PGROOT)\lib
 SHAREDIR = $(PGROOT)\share
 
+# Use $(PGROOT)\bin\pg_regress for Postgres < 17
+PG_REGRESS = $(LIBDIR)\pgxs\src\test\regress\pg_regress
+
 CFLAGS = /nologo /I"$(INCLUDEDIR_SERVER)\port\win32_msvc" /I"$(INCLUDEDIR_SERVER)\port\win32" /I"$(INCLUDEDIR_SERVER)" /I"$(INCLUDEDIR)"
 
 CFLAGS = $(CFLAGS) $(PG_CFLAGS)
 
 SHLIB = $(EXTENSION).dll
 
-LIBS = "$(LIBDIR)\postgres.lib" advapi32.lib
+LIBS = "$(LIBDIR)\postgres.lib"
 
-all: $(SHLIB) $(DATA_built)
+all: $(SHLIB) $(DATA)
 
 .c.obj:
 	$(CC) $(CFLAGS) /c $< /Fo$@
 
-$(SHLIB): $(OBJS)
-	$(CC) $(CFLAGS) $(OBJS) $(LIBS) /link /DLL /DEF:ulid.def /OUT:$(SHLIB)
+# Special build rule for ObjectId (needs C99+ features for MongoDB C driver)
+ifeq ($(MONGOC_AVAILABLE),yes)
+src\objectid.obj: src\objectid.c
+	$(CC) $(CFLAGS) /wd4090 /c $< /Fo$@
+endif
 
-# SQL file already exists, no need to copy
+$(SHLIB): $(OBJS)
+	$(CC) $(CFLAGS) $(OBJS) $(LIBS) /link /DLL /OUT:$(SHLIB)
+
+sql\$(EXTENSION)--$(EXTVERSION).sql: sql\$(EXTENSION).sql
+	copy sql\$(EXTENSION).sql $@
+
+sql\objectid--$(EXTVERSION).sql: sql\objectid.sql
+	copy sql\objectid.sql $@
 
 install: all
 	copy $(SHLIB) "$(PKGLIBDIR)"
 	copy $(EXTENSION).control "$(SHAREDIR)\extension"
 	copy sql\$(EXTENSION)--*.sql "$(SHAREDIR)\extension"
+	mkdir "$(INCLUDEDIR_SERVER)\extension\$(EXTENSION)"
+	for %f in ($(HEADERS)) do copy %f "$(INCLUDEDIR_SERVER)\extension\$(EXTENSION)"
 
+# Regression testing disabled - use manual testing instead
+# installcheck:
+#	"$(PG_REGRESS)" --bindir="$(BINDIR)" $(REGRESS_OPTS) $(REGRESS)
 installcheck: all
 	@echo "Running Windows CI batch test script..."
 	cmd.exe /C "cd /d %CD% && test\build\ci.bat"
@@ -53,9 +131,11 @@ uninstall:
 	del /f "$(PKGLIBDIR)\$(SHLIB)"
 	del /f "$(SHAREDIR)\extension\$(EXTENSION).control"
 	del /f "$(SHAREDIR)\extension\$(EXTENSION)--*.sql"
-
+	del /f "$(INCLUDEDIR_SERVER)\extension\$(EXTENSION)\*.h"
+	rmdir "$(INCLUDEDIR_SERVER)\extension\$(EXTENSION)"
 
 clean:
 	del /f $(SHLIB) $(EXTENSION).lib $(EXTENSION).exp
-	del /f $(DATA_built)
+	del /f $(DATA)
 	del /f $(OBJS)
+	del /f /s /q results regression.diffs regression.out tmp_check tmp_check_iso log output_iso

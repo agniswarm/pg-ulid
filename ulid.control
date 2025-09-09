@@ -1,5 +1,5 @@
 # ulid extension
-comment = 'ULID (Universally Unique Lexicographically Sortable Identifier) extension for PostgreSQL'
-default_version = '0.1.1'
+comment = 'Multiple ID generators (ULID, MongoDB ObjectId, Twitter Snowflake ID) for PostgreSQL'
+default_version = '0.3.0'
 module_pathname = '$libdir/ulid'
 relocatable = true
