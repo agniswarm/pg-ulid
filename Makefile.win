@@ -120,8 +120,12 @@ install: all
 	mkdir "$(INCLUDEDIR_SERVER)\extension\$(EXTENSION)"
 	for %f in ($(HEADERS)) do copy %f "$(INCLUDEDIR_SERVER)\extension\$(EXTENSION)"
 
-installcheck:
-	"$(PG_REGRESS)" --bindir="$(BINDIR)" $(REGRESS_OPTS) $(REGRESS)
+# Regression testing disabled - use manual testing instead
+# installcheck:
+#	"$(PG_REGRESS)" --bindir="$(BINDIR)" $(REGRESS_OPTS) $(REGRESS)
+installcheck: all
+	@echo "Running Windows CI batch test script..."
+	cmd.exe /C "cd /d %CD% && test\build\ci.bat"
 
 uninstall:
 	del /f "$(PKGLIBDIR)\$(SHLIB)"

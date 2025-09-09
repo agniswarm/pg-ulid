@@ -10,9 +10,10 @@ MODULE_big = $(EXTENSION)
 OBJS = src/ulid.o
 DATA = $(EXTENSION).control sql/$(EXTENSION)--$(EXTVERSION).sql
 
-TESTS = $(wildcard test/sql/*.sql)
-REGRESS = $(patsubst test/sql/%.sql,%,$(TESTS))
-REGRESS_OPTS = --inputdir=test --load-extension=$(EXTENSION)
+# Regression testing disabled - use manual testing instead
+# TESTS = $(wildcard test/sql/*.sql)
+# REGRESS = $(patsubst test/sql/%.sql,%,$(TESTS))
+# REGRESS_OPTS = --inputdir=test --load-extension=$(EXTENSION)
 
 # Optional: point to ulid-c include/lib if you want to use it
 ULID_C_DIR ?=
@@ -118,8 +119,16 @@ src/objectid.o: src/objectid.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) -Wno-declaration-after-statement -c $< -o $@
 endif
 
-# Use standard PostgreSQL testing
-# installcheck target is provided by PGXS
+Use standard PostgreSQL testing
+installcheck: all
+	@echo "Running extension tests via test/build/ci.sh..."
+	@echo "Data files: $(DATA)"
+	@if [ -f "test/build/ci.sh" ]; then \
+		bash test/build/ci.sh; \
+	else \
+		echo "ERROR: test/build/ci.sh not found"; \
+		exit 1; \
+	fi
 
 .PHONY: all all-local install installcheck uninstall clean
 
