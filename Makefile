@@ -79,8 +79,13 @@ ifneq ($(filter ppc64%, $(shell uname -m)), )
 endif
 
 # Add to PostgreSQL compile flags
-PG_CFLAGS += $(OPTFLAGS) $(ARCH_FLAGS) -std=gnu11 -fno-lto -fno-fat-lto-objects \
+PG_CFLAGS += $(OPTFLAGS) $(ARCH_FLAGS) -std=gnu11 -fno-lto \
              -Wno-unused-variable -Wno-unused-function
+
+# Add -fno-fat-lto-objects only if supported (not on older clang versions)
+ifeq ($(shell echo 'int main(){}' | $(CC) -fno-fat-lto-objects -x c - -o /dev/null 2>/dev/null && echo yes),yes)
+  PG_CFLAGS += -fno-fat-lto-objects
+endif
 
 # Special flags for ObjectId compilation (MongoDB C driver needs C99+ features)
 ifeq ($(MONGOC_AVAILABLE),yes)
@@ -120,7 +125,7 @@ src/objectid.o: src/objectid.c
 endif
 
 # Use standard PostgreSQL testing
-installcheck: all
+installcheck: all install
 	@echo "Running extension tests via test/build/ci.sh..."
 	@echo "Data files: $(DATA)"
 	@if [ -f "test/build/ci.sh" ]; then \

@@ -74,7 +74,9 @@ jobs:
       - run: make
         env:
           PG_CFLAGS: -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-warning-option
-      - run: make install
+      - run: |
+          export PG_CONFIG=`which pg_config`
+          sudo --preserve-env=PG_CONFIG make install
       - run: make installcheck
       - if: ${{ failure() }}
         run: cat regression.diffs
