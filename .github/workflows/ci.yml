@@ -8,21 +8,25 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - pg: 17
+          - postgres: 19
             os: ubuntu-24.04
-          - pg: 16
+          - postgres: 18
+            os: ubuntu-24.04
+          - postgres: 17
+            os: ubuntu-24.04
+          - postgres: 16
             os: ubuntu-24.04-arm
-          - pg: 15
+          - postgres: 15
             os: ubuntu-22.04
-          - pg: 14
+          - postgres: 14
             os: ubuntu-22.04-arm
-          - pg: 13
+          - postgres: 13
             os: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: ankane/setup-postgres@v1
         with:
-          postgres-version: ${{ matrix.pg }}
+          postgres-version: ${{ matrix.postgres }}
           dev-files: true
       - name: Install MongoDB C driver libraries
         run: |
@@ -32,7 +36,7 @@ jobs:
           echo "MongoDB C driver libraries installed"
       - run: make
         env:
-          PG_CFLAGS: ${{ matrix.pg >= 18 && '-Wno-missing-field-initializers' || '' }} -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare -fno-fat-lto-objects
+          PG_CFLAGS: ${{ matrix.postgres >= 18 && '-Wno-missing-field-initializers' || '' }} -DUSE_ASSERT_CHECKING -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare -fno-fat-lto-objects
       - run: |
           export PG_CONFIG=`which pg_config`
           sudo --preserve-env=PG_CONFIG make install
