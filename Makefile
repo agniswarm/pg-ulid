@@ -27,8 +27,8 @@ else
   ULID_C_LIBS =
 endif
 
-# ---------- MongoDB C driver detection ----------
-# Try pkg-config first (preferred - should work after CI installation)
+# ---------- MongoDB C driver detection (Linux only) ----------
+# Try pkg-config first (preferred)
 PKG_MONGOC_CFLAGS := $(shell pkg-config --cflags libmongoc-1.0 2>/dev/null || echo "")
 PKG_MONGOC_LIBS   := $(shell pkg-config --libs libmongoc-1.0 2>/dev/null || echo "")
 
@@ -38,12 +38,10 @@ ifneq ($(PKG_MONGOC_CFLAGS),)
   MONGOC_LIBS := $(PKG_MONGOC_LIBS)
   MONGOC_AVAILABLE = yes
 else
-  # Fallback: simple check for standard locations
-  # CI should install libraries in standard locations
+  # Fallback: check standard Linux paths
   MONGOC_CFLAGS := -I/usr/include/libbson-1.0 -I/usr/include/libmongoc-1.0
   MONGOC_LIBS := -lmongoc-1.0 -lbson-1.0
   
-  # Simple check - if header exists, assume libraries are available
   ifneq ($(wildcard /usr/include/libbson-1.0/bson.h),)
     MONGOC_AVAILABLE = yes
   else
@@ -57,28 +55,14 @@ ifeq ($(MONGOC_AVAILABLE),yes)
   OBJS += src/objectid.o
 endif
 
-# Target arch flags
-TARGET_ARCH ?= $(shell uname -m)
-ARCH_FLAGS :=
-ifeq ($(TARGET_ARCH), i386)
-  ARCH_FLAGS += -m32
-endif
+# Linux-only build - no architecture-specific flags
 
 # To compile for portability, run: make OPTFLAGS=""
 OPTFLAGS ?= -O2
 
-# Mac ARM doesn't always support -march=native
-ifeq ($(shell uname -s), Darwin)
-	ifeq ($(shell uname -p), arm)
-		# no difference with -march=armv8.5-a
-		OPTFLAGS =
-	endif
-endif
+# Linux-only build - no macOS-specific code
 
-# PowerPC doesn't support -march=native
-ifneq ($(filter ppc64%, $(shell uname -m)), )
-	OPTFLAGS =
-endif
+# Linux-only build - no PowerPC-specific code
 
 # Add to PostgreSQL compile flags
 PG_CFLAGS += $(OPTFLAGS) $(ARCH_FLAGS) -std=gnu11 -fno-lto \
