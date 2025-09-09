@@ -38,7 +38,7 @@
 #endif
 
 /* MongoDB C driver includes */
-#include "objectid_bson.h"
+#include <bson/bson.h>
 #include <mongoc/mongoc.h>
 
 /* PostgreSQL module magic - defined in ulid.c */
