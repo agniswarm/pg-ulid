@@ -5,6 +5,7 @@ Comprehensive Python test suite for the PostgreSQL ULID and ObjectId extension u
 ## Overview
 
 This test suite provides comprehensive testing for both ULID and MongoDB ObjectId PostgreSQL extensions, covering:
+
 - Basic ULID and ObjectId generation and functionality
 - Casting operations between types and other PostgreSQL types
 - Monotonic generation and ordering
@@ -19,7 +20,7 @@ This test suite provides comprehensive testing for both ULID and MongoDB ObjectI
 
 The test suite is organized into specialized folders:
 
-```
+```sh
 test/python/
 ├── ulid/                    # ULID-specific tests
 │   ├── test_01_basic_functionality.py

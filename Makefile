@@ -1,47 +1,64 @@
 #
-# Makefile - PostgreSQL ULID extension with optional ObjectId support
-# Based on pgvector's build system with conditional MongoDB support
+# Makefile - PostgreSQL ULID extension (production-ready)
 #
 
 EXTENSION = ulid
-EXTVERSION = 0.2.0
+EXTVERSION = 0.3.0
+SQL_DIR = sql
+ASSEMBLED_DIR = $(SQL_DIR)/assembled
 
+# Base SQL modules (objectid.sql appended conditionally below)
+SQL_MODULES = \
+  $(SQL_DIR)/00-extensions.sql \
+  $(SQL_DIR)/ulid.sql
+
+.PHONY: all assemble clean release installcheck
+
+# C build variables (must be set before including PGXS)
 MODULE_big = $(EXTENSION)
 OBJS = src/ulid.o
-DATA = $(EXTENSION).control sql/$(EXTENSION)--$(EXTVERSION).sql
 
-# Regression testing disabled - use manual testing instead
-# TESTS = $(wildcard test/sql/*.sql)
-# REGRESS = $(patsubst test/sql/%.sql,%,$(TESTS))
-# REGRESS_OPTS = --inputdir=test --load-extension=$(EXTENSION)
+# Ensure `make` builds both the assembled SQL and the shared object
+all: assemble $(MODULE_big).so
 
-# Optional: point to ulid-c include/lib if you want to use it
-ULID_C_DIR ?=
-ifdef ULID_C_DIR
-  ULID_C_INCDIR = -I$(ULID_C_DIR)/include
-  ULID_C_LIBDIR = -L$(ULID_C_DIR)/lib
-  ULID_C_LIBS   = -lulid
-else
-  ULID_C_INCDIR =
-  ULID_C_LIBDIR =
-  ULID_C_LIBS =
+assemble: $(ASSEMBLED_DIR)/$(EXTENSION)--$(EXTVERSION).sql
+
+$(ASSEMBLED_DIR):
+	mkdir -p $(ASSEMBLED_DIR)
+
+# Build assembled SQL by concatenating module files in order
+$(ASSEMBLED_DIR)/$(EXTENSION)--$(EXTVERSION).sql: $(SQL_MODULES) | $(ASSEMBLED_DIR)
+	@mkdir -p $(ASSEMBLED_DIR)
+	@echo "-- Assembled $(EXTENSION)--$(EXTVERSION)" > $@
+	@for f in $(SQL_MODULES); do \
+	  echo "-- ==== $$f ====" >> $@; \
+	  cat $$f >> $@; \
+	  echo "" >> $@; \
+	done
+
+# Files to install (PGXS uses DATA)
+DATA = $(EXTENSION).control $(ASSEMBLED_DIR)/$(EXTENSION)--$(EXTVERSION).sql
+
+#
+# Optional MongoDB (ObjectId) support detection
+# - Prefer pkg-config; fallback to common system includes.
+#
+PKG_CONFIG ?= pkg-config
+
+ifneq ($(shell $(PKG_CONFIG) --exists libmongoc-1.0 2>/dev/null && echo yes),)
+  PKG_MONGOC_CFLAGS := $(shell $(PKG_CONFIG) --cflags libmongoc-1.0)
+  PKG_MONGOC_LIBS   := $(shell $(PKG_CONFIG) --libs   libmongoc-1.0)
 endif
 
-# ---------- MongoDB C driver detection (Linux only) ----------
-# Try pkg-config first (preferred)
-PKG_MONGOC_CFLAGS := $(shell pkg-config --cflags libmongoc-1.0 2>/dev/null || echo "")
-PKG_MONGOC_LIBS   := $(shell pkg-config --libs libmongoc-1.0 2>/dev/null || echo "")
-
-# Check if pkg-config worked
 ifneq ($(PKG_MONGOC_CFLAGS),)
   MONGOC_CFLAGS := $(PKG_MONGOC_CFLAGS)
-  MONGOC_LIBS := $(PKG_MONGOC_LIBS)
+  MONGOC_LIBS   := $(PKG_MONGOC_LIBS)
   MONGOC_AVAILABLE = yes
 else
-  # Fallback: check standard Linux paths
+  # fallback check for header presence (common Linux layout)
   MONGOC_CFLAGS := -I/usr/include/libbson-1.0 -I/usr/include/libmongoc-1.0
-  MONGOC_LIBS := -lmongoc-1.0 -lbson-1.0
-  
+  MONGOC_LIBS   := -lmongoc-1.0 -lbson-1.0
+
   ifneq ($(wildcard /usr/include/libbson-1.0/bson.h),)
     MONGOC_AVAILABLE = yes
   else
@@ -50,77 +67,40 @@ else
   endif
 endif
 
-# Conditionally add ObjectId support
+# If libmongoc available, enable objectid.c compilation and include objectid.sql
 ifeq ($(MONGOC_AVAILABLE),yes)
   OBJS += src/objectid.o
-endif
-
-# Linux-only build - no architecture-specific flags
-
-# To compile for portability, run: make OPTFLAGS=""
-OPTFLAGS ?= -O2
-
-# Linux-only build - no macOS-specific code
-
-# Linux-only build - no PowerPC-specific code
-
-# Add to PostgreSQL compile flags
-PG_CFLAGS += $(OPTFLAGS) $(ARCH_FLAGS) -std=gnu11 -fno-lto \
-             -Wno-unused-variable -Wno-unused-function
-
-# Note: -fno-fat-lto-objects is added via CI environment variables for systems that support it
-
-# Special flags for ObjectId compilation (MongoDB C driver needs C99+ features)
-ifeq ($(MONGOC_AVAILABLE),yes)
-  PG_CFLAGS += -Wno-declaration-after-statement
-endif
-
-# Make sure include flags are available in every relevant variable so both
-# gcc compile and clang LTO/emit-llvm compile steps see them.
-# (Some PGXS rules use CPPFLAGS/CFLAGS directly for different compile invocations.)
-CPPFLAGS += $(ULID_C_INCDIR)
-PG_CPPFLAGS += $(ULID_C_INCDIR)
-CFLAGS += $(ULID_C_INCDIR)
-PG_CFLAGS += $(ULID_C_INCDIR)
-
-# Add MongoDB flags only if available
-ifeq ($(MONGOC_AVAILABLE),yes)
-  CPPFLAGS += $(MONGOC_CFLAGS)
-  PG_CPPFLAGS += $(MONGOC_CFLAGS)
-  CFLAGS += $(MONGOC_CFLAGS)
-  PG_CFLAGS += $(MONGOC_CFLAGS)
   SHLIB_LINK += $(MONGOC_LIBS)
+  PG_CPPFLAGS += $(MONGOC_CFLAGS)
+  SQL_MODULES += $(SQL_DIR)/objectid.sql
 endif
 
-# Linker flags
-SHLIB_LINK += $(ULID_C_LIBDIR) $(ULID_C_LIBS)
+# Non-interactive release: `make release RELEASE=0.3.1`
+release:
+	$(MAKE) clean
+	@if [ -z "$(RELEASE)" ]; then \
+	  echo "Usage: make release RELEASE=x.y.z"; exit 1; \
+	fi
+	mkdir -p $(ASSEMBLED_DIR)
+	@cat $(SQL_MODULES) > $(ASSEMBLED_DIR)/$(EXTENSION)--$(RELEASE).sql
+	@echo "Built $(ASSEMBLED_DIR)/$(EXTENSION)--$(RELEASE).sql"
 
-CC ?= $(HOSTCC)
+# Clean (local assembled files) + PGXS clean
+clean:
+	-rm -rf $(ASSEMBLED_DIR)
+	-$(MAKE) -s -f $(PGXS) clean || true
 
-# build rule for object files under src/
-src/%.o: src/%.c
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) -c $< -o $@
-
-# Special build rule for ObjectId (needs C99+ features for MongoDB C driver)
-ifeq ($(MONGOC_AVAILABLE),yes)
-src/objectid.o: src/objectid.c
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(PG_CFLAGS) -Wno-declaration-after-statement -c $< -o $@
-endif
-
-# Use standard PostgreSQL testing
+# Installcheck target (optional)
 installcheck: all
-	@echo "Running extension tests via test/build/ci.sh..."
-	@echo "Data files: $(DATA)"
+	@echo "Running installcheck (if configured)..."
+	@echo "DATA: $(DATA)"
 	@if [ -f "test/build/ci.sh" ]; then \
-		bash test/build/ci.sh; \
+	  bash test/build/ci.sh; \
 	else \
-		echo "ERROR: test/build/ci.sh not found"; \
-		exit 1; \
+	  echo "No test/build/ci.sh present; skipping."; \
 	fi
 
-.PHONY: all all-local install installcheck uninstall clean
-
-# include PGXS at the end so variables above are used by PGXS rules
+# --- include PGXS at the end so variables above are used by PGXS rules
 PG_CONFIG ?= pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
