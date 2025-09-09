@@ -9,7 +9,6 @@ EXTVERSION = 0.2.0
 MODULE_big = $(EXTENSION)
 OBJS = src/ulid.o
 DATA = $(EXTENSION).control sql/$(EXTENSION)--$(EXTVERSION).sql
-HEADERS = src/ulid.h
 
 TESTS = $(wildcard test/sql/*.sql)
 REGRESS = $(patsubst test/sql/%.sql,%,$(TESTS))
@@ -53,8 +52,6 @@ endif
 # Conditionally add ObjectId support
 ifeq ($(MONGOC_AVAILABLE),yes)
   OBJS += src/objectid.o
-  DATA += sql/objectid--$(EXTVERSION).sql
-  HEADERS += src/objectid.h
 endif
 
 # Target arch flags

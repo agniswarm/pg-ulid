@@ -7,9 +7,8 @@ EXTENSION = ulid
 EXTVERSION = 0.2.0
 
 MODULE_big = $(EXTENSION)
-OBJS = src\ulid.obj src\objectid.obj
+OBJS = src\ulid.obj
 DATA = $(EXTENSION).control sql\$(EXTENSION)--$(EXTVERSION).sql
-HEADERS = src\ulid.h
 
 # Optional: point to ulid-c include/lib if you want to use it
 ULID_C_DIR ?=
@@ -40,8 +39,6 @@ endif
 # Conditionally add ObjectId support
 ifeq ($(MONGOC_AVAILABLE),yes)
   OBJS += src\objectid.obj
-  DATA += sql\objectid--$(EXTVERSION).sql
-  HEADERS += src\objectid.h
 endif
 
 # For /arch flags
