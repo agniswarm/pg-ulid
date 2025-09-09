@@ -1,14 +1,17 @@
-# PostgreSQL ULID Extension
+# PostgreSQL ULID and ObjectId Extension
 
-A PostgreSQL extension that provides ULID (Universally Unique Lexicographically Sortable Identifier) support with full type integration, casting operations, and comprehensive functionality.
+A PostgreSQL extension that provides ULID (Universally Unique Lexicographically Sortable Identifier) and MongoDB ObjectId support with full type integration, casting operations, and comprehensive functionality.
 
 ## Features
 
-- **Custom ULID Type**: Native PostgreSQL type with 16-byte binary storage
-- **Generation Functions**: Random, monotonic, and timestamp-based ULID generation
-- **Casting Support**: Seamless conversion between ULID, text, timestamp, timestamptz, UUID, and bytea
+- **Custom Types**: Native PostgreSQL types with efficient binary storage
+  - `ulid`: 16-byte binary storage
+  - `objectid`: 12-byte binary storage
+- **Generation Functions**: Random, monotonic, and timestamp-based generation for both types
+- **Casting Support**: Seamless conversion between all types and standard PostgreSQL types
+- **Cross-Type Conversion**: Bidirectional conversion between ULID and ObjectId
 - **Comparison Operators**: Full set of comparison operators for sorting and indexing
-- **Timestamp Extraction**: Extract millisecond timestamps from ULIDs
+- **Timestamp Extraction**: Extract timestamps from both ULID and ObjectId
 - **Cross-Platform**: Works on Linux, macOS, and Windows
 - **Performance Optimized**: Efficient binary storage and operations
 
@@ -19,6 +22,7 @@ A PostgreSQL extension that provides ULID (Universally Unique Lexicographically 
 - PostgreSQL 12+ (tested on PostgreSQL 12-17)
 - C compiler (GCC, Clang, or MSVC)
 - PostgreSQL development headers
+- MongoDB C driver (for ObjectId support)
 
 ### Build and Install
 
@@ -63,6 +67,19 @@ SELECT ulid_random();
 SELECT ulid_generate_with_timestamp(1640995200000); -- 2022-01-01 00:00:00 UTC
 ```
 
+### Basic ObjectId Generation
+
+```sql
+-- Generate an ObjectId
+SELECT objectid();
+
+-- Generate a random ObjectId
+SELECT objectid_random();
+
+-- Generate ObjectId with specific timestamp (in seconds)
+SELECT objectid_generate_with_timestamp(1640995200); -- 2022-01-01 00:00:00 UTC
+```
+
 ### ULID Type Operations
 
 ```sql
@@ -78,6 +95,44 @@ INSERT INTO users (name) VALUES ('John Doe'), ('Jane Smith');
 
 -- Query with ULID
 SELECT * FROM users WHERE id = '01ARZ3NDEKTSV4RRFFQ69G5FAV'::ulid;
+```
+
+### ObjectId Type Operations
+
+```sql
+-- Create table with ObjectId primary key
+CREATE TABLE orders (
+    id objectid PRIMARY KEY DEFAULT objectid(),
+    user_id ulid REFERENCES users(id),
+    amount decimal(10,2) NOT NULL,
+    created_at timestamp DEFAULT now()
+);
+
+-- Insert data
+INSERT INTO orders (user_id, amount) 
+SELECT id, 99.99 FROM users LIMIT 1;
+
+-- Query with ObjectId
+SELECT * FROM orders WHERE id = '507f1f77bcf86cd799439011'::objectid;
+```
+
+### Cross-Type Conversion
+
+```sql
+-- Convert ULID to ObjectId
+SELECT ulid()::objectid;
+
+-- Convert ObjectId to ULID
+SELECT objectid()::ulid;
+
+-- Mixed table with both types
+CREATE TABLE mixed_table (
+    id SERIAL PRIMARY KEY,
+    ulid_col ulid,
+    objectid_col objectid,
+    converted_ulid ulid GENERATED ALWAYS AS (objectid_col::ulid) STORED,
+    converted_objectid objectid GENERATED ALWAYS AS (ulid_col::objectid) STORED
+);
 ```
 
 ### Casting Operations
@@ -205,13 +260,18 @@ WHERE id > '01ARZ3NDEKTSV4RRFFQ69G5FAV'::ulid;
 Comprehensive Python tests are available using pytest. See [test/python/README.md](test/python/README.md) for detailed testing information.
 
 ```bash
-# Run all tests
+# Run all tests (ULID, ObjectId, cross-type, and integration)
 python -m pytest test/python/ -v
 
-# Run specific test suites
-python -m pytest test/python/test_01_basic_functionality.py -v
-python -m pytest test/python/test_02_casting_operations.py -v
-python -m pytest test/python/test_03_monotonic_generation.py -v
+# Run tests by type
+python -m pytest test/python/ulid/ -v          # ULID-specific tests
+python -m pytest test/python/objectid/ -v      # ObjectId-specific tests
+python -m pytest test/python/cross-type/ -v    # Conversion tests
+python -m pytest test/python/integration/ -v   # Mixed operations tests
+
+# Run specific test files
+python -m pytest test/python/ulid/test_01_basic_functionality.py -v
+python -m pytest test/python/objectid/test_01_basic_functionality.py -v
 ```
 
 ## Development
@@ -239,7 +299,7 @@ python -m pytest test/python/ -v
 
 ### Project Structure
 
-```
+```sh
 ├── src/
 │   └── ulid.c              # Main implementation
 ├── sql/

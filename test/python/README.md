@@ -1,42 +1,77 @@
-# ULID Extension Python Tests
+# ULID and ObjectId Extension Python Tests
 
-This directory contains comprehensive Python tests for the PostgreSQL ULID extension using pytest. These tests provide better validation than SQL tests and can catch more edge cases with proper assertions and error handling.
+Comprehensive Python test suite for the PostgreSQL ULID and ObjectId extension using pytest.
 
-## Test Files
+## Overview
 
-- `test_01_basic_functionality.py` - Tests basic ULID generation, validation, and core functionality
-- `test_02_casting_operations.py` - Tests all ULID casting operations between different types
-- `test_03_monotonic_generation.py` - Tests ULID monotonic generation and ordering properties
-- `test_04_stress_tests.py` - Tests ULID generation under various stress conditions
-- `test_05_binary_storage.py` - Tests ULID binary storage and efficiency
-- `test_06_database_operations.py` - Tests database operations with ULID columns
-- `test_07_error_handling.py` - Tests error handling and edge cases
+This test suite provides comprehensive testing for both ULID and MongoDB ObjectId PostgreSQL extensions, covering:
+- Basic ULID and ObjectId generation and functionality
+- Casting operations between types and other PostgreSQL types
+- Monotonic generation and ordering
+- Cross-type conversion between ULID and ObjectId
+- Stress testing and performance
+- Binary storage and efficiency
+- Database operations and constraints
+- Error handling and edge cases
+- Mixed operations and integration testing
 
-## Prerequisites
+## Test Organization
 
-1. **Python 3.8+** with pytest installed:
+The test suite is organized into specialized folders:
 
-   ```bash
-   pip install pytest psycopg2-binary
-   ```
+```
+test/python/
+├── ulid/                    # ULID-specific tests
+│   ├── test_01_basic_functionality.py
+│   ├── test_02_casting_operations.py
+│   ├── test_03_monotonic_generation.py
+│   ├── test_04_stress_tests.py
+│   ├── test_05_binary_storage.py
+│   ├── test_06_database_operations.py
+│   └── test_07_error_handling.py
+├── objectid/                # ObjectId-specific tests
+│   ├── test_01_basic_functionality.py
+│   └── test_02_casting_operations.py
+├── cross-type/              # Conversion tests
+│   └── test_01_ulid_objectid_conversion.py
+├── integration/             # Mixed operations tests
+│   └── test_01_mixed_operations.py
+├── requirements.txt         # Python dependencies
+└── README.md               # This file
+```
 
-2. **PostgreSQL** with the ULID extension installed:
+## Setup
 
-   ```bash
-   # Install the extension (see main README for build instructions)
-   psql -d testdb -c "CREATE EXTENSION ulid;"
-   ```
+### Prerequisites
 
-## Environment Setup
+- Python 3.7+
+- PostgreSQL 12+ with the ULID extension installed
+- MongoDB C driver (for ObjectId support)
+- pytest
+- psycopg2
 
-Set the following environment variables for database connection:
+### Installation
 
 ```bash
-export PGHOST=localhost
-export PGDATABASE=testdb
-export PGUSER=postgres
-export PGPASSWORD=your_password
-export PGPORT=5432
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Or install manually
+pip install pytest psycopg2
+```
+
+### Database Configuration
+
+The tests connect to a PostgreSQL database. Configure the connection in each test file:
+
+```python
+DB_CONFIG = {
+    'host': 'localhost',
+    'port': 5435,
+    'database': 'testdb',
+    'user': 'testuser',
+    'password': 'testpass'
+}
 ```
 
 ## Running Tests
@@ -44,202 +79,181 @@ export PGPORT=5432
 ### Run All Tests
 
 ```bash
-# From the project root
-python -m pytest test/python/ -v
-
-# Or from the test directory
-cd test/python
+# From the test/python directory - runs all tests in all folders
 python -m pytest -v
+
+# Or run pytest on specific directories
+python -m pytest ulid/ objectid/ cross-type/ integration/ -v
 ```
 
-### Run Individual Test Files
+### Run Tests by Type
 
 ```bash
-# Basic functionality tests
-python -m pytest test/python/test_01_basic_functionality.py -v
+# Run only ULID tests
+python -m pytest ulid/ -v
 
-# Casting operations tests
-python -m pytest test/python/test_02_casting_operations.py -v
+# Run only ObjectId tests
+python -m pytest objectid/ -v
 
-# Monotonic generation tests
-python -m pytest test/python/test_03_monotonic_generation.py -v
+# Run only conversion tests
+python -m pytest cross-type/ -v
 
-# Stress tests
-python -m pytest test/python/test_04_stress_tests.py -v
-
-# Binary storage tests
-python -m pytest test/python/test_05_binary_storage.py -v
-
-# Database operations tests
-python -m pytest test/python/test_06_database_operations.py -v
-
-# Error handling tests
-python -m pytest test/python/test_07_error_handling.py -v
+# Run only integration tests
+python -m pytest integration/ -v
 ```
 
-### Run Specific Tests
+### Run Specific Test Files
 
 ```bash
-# Run a specific test function
-python -m pytest test/python/test_01_basic_functionality.py::test_basic_generation_and_lengths -v
+# Run specific test file
+python -m pytest ulid/test_01_basic_functionality.py -v
 
-# Run tests matching a pattern
-python -m pytest test/python/ -k "casting" -v
+# Run with specific test class
+python -m pytest ulid/test_01_basic_functionality.py::TestULIDBasicFunctionality -v
+
+# Run specific test method
+python -m pytest ulid/test_01_basic_functionality.py::TestULIDBasicFunctionality::test_ulid_generation -v
 ```
+
+## Test Structure
+
+### ULID Tests (`ulid/`)
+
+1. **test_01_basic_functionality.py** - Basic ULID generation and core functionality
+2. **test_02_casting_operations.py** - Type casting between ULID and other PostgreSQL types
+3. **test_03_monotonic_generation.py** - Monotonic ULID generation and ordering
+4. **test_04_stress_tests.py** - Stress testing and performance validation
+5. **test_05_binary_storage.py** - Binary storage efficiency and operations
+6. **test_06_database_operations.py** - Database operations, constraints, and indexing
+7. **test_07_error_handling.py** - Error handling and edge cases
+
+### ObjectId Tests (`objectid/`)
+
+1. **test_01_basic_functionality.py** - Basic ObjectId generation and core functionality
+2. **test_02_casting_operations.py** - Type casting between ObjectId and other PostgreSQL types
+
+### Cross-Type Tests (`cross-type/`)
+
+1. **test_01_ulid_objectid_conversion.py** - Conversion between ULID and ObjectId types
+
+### Integration Tests (`integration/`)
+
+1. **test_01_mixed_operations.py** - Mixed operations using both ULID and ObjectId types
 
 ## Test Features
 
-- **Comprehensive Coverage**: Tests all documented functionality and edge cases
-- **Real Assertions**: Uses Python assertions with detailed error messages
-- **Performance Testing**: Includes timing and stress tests with configurable limits
-- **Error Handling**: Proper exception handling and error message validation
-- **Cleanup**: Automatic cleanup of test data and proper transaction handling
-- **Detailed Output**: Clear pass/fail reporting with timing information
-- **Skip Logic**: Intelligent skipping of tests when functions are not available
+### Comprehensive Coverage
 
-## Test Categories
+- **Function Testing**: All ULID and ObjectId functions and operators
+- **Type Safety**: Proper type handling and validation
+- **Cross-Type Conversion**: Bidirectional conversion between ULID and ObjectId
+- **Performance**: Stress testing and timing validation
+- **Error Handling**: Invalid input handling and error conditions
+- **Database Integration**: Full PostgreSQL integration testing
+- **Mixed Operations**: Tests using both types together
 
-### Basic Functionality (test_01)
+### Test Data
 
-- ULID generation functions (`ulid()`, `ulid_random()`)
-- Uniqueness validation across multiple generations
-- Length validation (26 characters)
-- Batch operations (`ulid_batch()`, `ulid_random_batch()`)
-- NULL handling and edge cases
-- README functionality validation
+- **Random Generation**: Uses random generation for uniqueness testing
+- **Specific Timestamps**: Uses fixed timestamps for deterministic testing
+- **Edge Cases**: Tests boundary conditions and edge cases
+- **Invalid Inputs**: Tests error handling with invalid data
+- **Cross-Type Data**: Tests conversion between different ID types
 
-### Casting Operations (test_02)
+### Assertions
 
-- Text ↔ ULID casting with round-trip validation
-- Timestamp ↔ ULID casting with precision checks
-- UUID ↔ ULID casting
-- Binary ↔ ULID casting with byte-level validation
-- Comprehensive round-trip tests for all type combinations
-- Precision preservation verification
-
-### Monotonic Generation (test_03)
-
-- Ordering properties and lexicographic sorting
-- Consecutive generation uniqueness
-- Batch monotonicity validation
-- Performance under load (1000+ ULIDs)
-- Window function testing with LAG operations
-- Text vs binary ordering consistency
-
-### Stress Tests (test_04)
-
-- Small batch generation (100 ULIDs)
-- Medium batch generation (1,000 ULIDs)
-- Large batch generation (10,000 ULIDs)
-- Very large batch generation (100,000 ULIDs)
-- Massive batch generation (1,000,000 ULIDs) - configurable
-- Performance benchmarks with timing measurements
-
-### Binary Storage (test_05)
-
-- Binary representation validation (16 bytes)
-- Storage efficiency verification
-- System table verification (`pg_type`, `pg_proc`)
-- Round-trip binary operations
-- Multiple binary round-trip consistency
-
-### Database Operations (test_06)
-
-- Table creation with ULID columns and default values
-- Index creation and usage
-- Range queries and filtering
-- Sorting and ordering operations
-- Aggregation functions
-- Join operations with ULID columns
-- Foreign key relationships
-
-### Error Handling (test_07)
-
-- Invalid ULID text input handling
-- Invalid timestamp input validation
-- Invalid UUID input handling
-- Invalid bytea input validation
-- Function parameter validation
-- Type coercion error handling
-- Constraint violation testing
-- Transactional rollback behavior
-- Informative error message validation
-
-## Configuration
-
-### Environment Variables
-
-- `PGHOST` - PostgreSQL host (default: localhost)
-- `PGDATABASE` - Database name (default: testdb)
-- `PGUSER` - Database user (default: postgres)
-- `PGPASSWORD` - Database password (default: empty)
-- `PGPORT` - Database port (default: 5432)
-- `ULID_STRESS_MAX` - Maximum stress test size (default: 100,000)
-
-### Test Limits
-
-- Stress tests are limited by `ULID_STRESS_MAX` environment variable
-- Some tests are skipped if required functions are not available
-- Performance tests include timing measurements
-- Memory usage is monitored for large batch operations
+- **Type Validation**: Ensures correct return types
+- **Format Validation**: Validates string format and length
+- **Uniqueness**: Verifies uniqueness across generations
+- **Ordering**: Validates lexicographic ordering properties
+- **Performance**: Validates performance characteristics
+- **Conversion Accuracy**: Validates cross-type conversions
 
 ## Expected Results
 
-All tests should pass with the following characteristics:
+### Successful Test Run
 
-- **ULID Generation**: ~1,000+ ULIDs/second
-- **Binary Storage**: 16 bytes per ULID
-- **Text Representation**: 26 characters per ULID
-- **Monotonic Ordering**: Always maintained across generations
-- **Uniqueness**: 100% guaranteed within reasonable limits
-- **Casting**: All operations work correctly with proper error handling
-- **Performance**: Stress tests complete within reasonable time limits
+```bash
+$ python -m pytest -v
+========================= test session starts =========================
+platform linux -- Python 3.9.7, pytest-6.2.5, py-1.10.0, pluggy-0.13.1
+rootdir: /path/to/test/python
+collected 255 items
+
+ulid/test_01_basic_functionality.py::TestULIDBasicFunctionality::test_ulid_type_exists PASSED
+ulid/test_01_basic_functionality.py::TestULIDBasicFunctionality::test_ulid_generation PASSED
+...
+objectid/test_01_basic_functionality.py::TestObjectIdBasicFunctionality::test_objectid_type_exists PASSED
+objectid/test_01_basic_functionality.py::TestObjectIdBasicFunctionality::test_objectid_generation PASSED
+...
+cross-type/test_01_ulid_objectid_conversion.py::TestULIDObjectIdConversion::test_ulid_to_objectid_cast PASSED
+cross-type/test_01_ulid_objectid_conversion.py::TestULIDObjectIdConversion::test_objectid_to_ulid_cast PASSED
+...
+integration/test_01_mixed_operations.py::TestMixedOperations::test_mixed_table_creation PASSED
+integration/test_01_mixed_operations.py::TestMixedOperations::test_mixed_indexing PASSED
+...
+
+========================= 255 passed in 68.45s =========================
+```
+
+### Test Categories
+
+- **ULID Tests**: ~150 tests
+- **ObjectId Tests**: ~50 tests  
+- **Cross-Type Tests**: ~25 tests
+- **Integration Tests**: ~30 tests
+
+**Total**: ~255 comprehensive tests
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Database Connection Errors**:
-   - Verify PostgreSQL is running
-   - Check connection parameters in environment variables
-   - Ensure database exists and is accessible
-
-2. **Extension Not Found**:
-   - Install the ULID extension: `CREATE EXTENSION ulid;`
-   - Check extension is in the correct schema
-   - Verify extension files are properly installed
-
-3. **Missing Functions**:
-   - Some tests may be skipped if functions are not available
-   - Check that all required functions are properly installed
-   - Verify function signatures match expected parameters
-
-4. **Performance Issues**:
-   - Adjust `ULID_STRESS_MAX` for your system capabilities
-   - Monitor system resources during stress tests
-   - Consider running tests on a dedicated test system
-
-5. **Test Failures**:
-   - Check PostgreSQL logs for detailed error messages
-   - Verify all dependencies are installed
-   - Run individual test files to isolate issues
-   - Check that test database is clean and properly configured
+1. **Database Connection**: Ensure PostgreSQL is running and accessible
+2. **Extension Not Installed**: Verify both ULID and ObjectId extensions are installed
+3. **MongoDB C Driver**: Ensure MongoDB C driver is installed for ObjectId support
+4. **Permission Issues**: Check database user permissions
+5. **Python Dependencies**: Ensure all required packages are installed
 
 ### Debug Mode
 
-Run tests with additional debugging information:
+Run tests with debug output:
 
 ```bash
-python -m pytest test/python/ -v -s --tb=short
+python -m pytest -v -s --tb=short
+```
+
+### Verbose Output
+
+For detailed test output:
+
+```bash
+python -m pytest -v --tb=long
 ```
 
 ## Contributing
 
-When adding new tests:
+### Adding New Tests
 
-1. Follow the existing naming convention (`test_XX_category.py`)
-2. Include proper docstrings and comments
-3. Use appropriate assertions with descriptive messages
-4. Handle edge cases and error conditions
-5. Include performance considerations for stress tests
-6. Update this README with new test categories
+1. Create test methods in appropriate test classes
+2. Follow naming convention: `test_<description>`
+3. Add proper docstrings and assertions
+4. Ensure tests are deterministic and isolated
+5. Place tests in the appropriate folder based on functionality
+
+### Test Guidelines
+
+- Use descriptive test names
+- Include comprehensive docstrings
+- Test both success and failure cases
+- Validate return types and formats
+- Test edge cases and boundary conditions
+- Test cross-type conversions when applicable
+
+### Code Style
+
+- Follow PEP 8 guidelines
+- Use type hints where appropriate
+- Include proper error handling
+- Document complex test logic
+- Organize tests by functionality in appropriate folders
